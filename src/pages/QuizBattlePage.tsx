@@ -63,7 +63,7 @@ export default function QuizBattlePage() {
     setTimeLeft(QUESTION_TIME_LIMIT);
   }, [questionIndex, QUESTION_TIME_LIMIT]);
 
-  // Check if already answered
+  // Check if already answered (restore submitted state on reload / refetch)
   useEffect(() => {
     if (!myParticipant) return;
     const existing = answers.find(
@@ -71,7 +71,15 @@ export default function QuizBattlePage() {
     );
     if (existing) {
       setSubmitted(true);
-      setSelectedOption(existing.selected_option);
+      if (existing.selected_option >= 0) {
+        setSelectedOption(existing.selected_option);
+      }
+      const payload = (existing as { answer_payload?: { selections?: Record<string, number> } }).answer_payload;
+      if (payload?.selections) {
+        const restored: Record<number, number> = {};
+        for (const [k, v] of Object.entries(payload.selections)) restored[Number(k)] = v as number;
+        setProgramSelections(restored);
+      }
     }
   }, [answers, myParticipant, questionIndex]);
 
@@ -465,22 +473,37 @@ export default function QuizBattlePage() {
                 {/* Submit / Status */}
                 <div className="mt-6 flex items-center justify-between">
                   {!submitted && !showReveal ? (
-                    <button
-                      onClick={handleSubmit}
-                      disabled={selectedOption === null}
-                      className="px-8 py-3 rounded-xl bg-primary/20 text-primary hover:bg-primary/30 transition-all font-semibold disabled:opacity-30"
-                    >
-                      Submit Answer
-                    </button>
+                    (() => {
+                      const disabled = currentMcq
+                        ? selectedOption === null
+                        : currentProgram
+                        ? Object.keys(programSelections).length < currentProgram.blanks.length
+                        : true;
+                      return (
+                        <button
+                          onClick={handleSubmit}
+                          disabled={disabled}
+                          className="px-8 py-3 rounded-xl bg-primary/20 text-primary hover:bg-primary/30 transition-all font-semibold disabled:opacity-30"
+                        >
+                          Submit Answer
+                        </button>
+                      );
+                    })()
                   ) : (
                     <div className="flex items-center gap-2">
-                      {submitted && selectedOption === currentQ?.correctIndex ? (
-                        <span className="text-neon-cyan font-semibold flex items-center gap-1"><Check className="w-4 h-4" /> Correct!</span>
-                      ) : submitted ? (
-                        <span className="text-destructive font-semibold flex items-center gap-1"><X className="w-4 h-4" /> Wrong</span>
-                      ) : (
-                        <span className="text-muted-foreground">Time's up!</span>
-                      )}
+                      {(() => {
+                        if (!submitted) return <span className="text-muted-foreground">Time's up!</span>;
+                        const correct = currentMcq
+                          ? selectedOption === currentMcq.correctIndex
+                          : currentProgram
+                          ? gradeProgramAnswer(currentProgram, programSelections).isCorrect
+                          : false;
+                        return correct ? (
+                          <span className="text-neon-cyan font-semibold flex items-center gap-1"><Check className="w-4 h-4" /> Correct!</span>
+                        ) : (
+                          <span className="text-destructive font-semibold flex items-center gap-1"><X className="w-4 h-4" /> Wrong</span>
+                        );
+                      })()}
                       {fastestCorrect && (
                         <span className="text-xs text-neon-orange ml-3 flex items-center gap-1">
                           <Zap className="w-3 h-3" /> Fastest: {fastestCorrect}
