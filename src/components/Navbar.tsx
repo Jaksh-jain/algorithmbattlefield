@@ -1,4 +1,4 @@
-import logo from "@/assets/logo.png";
+import logo from "@/assets/logo.svg";
 import { Link, useLocation } from "react-router-dom";
 import { Users, Swords, Eye, Trophy, BookOpen } from "lucide-react";
 
@@ -15,7 +15,11 @@ export default function Navbar() {
     <nav className="fixed top-0 left-0 right-0 z-50 glass-panel-strong rounded-none border-x-0 border-t-0">
       <div className="max-w-7xl mx-auto px-4 h-16 flex items-center justify-between">
         <Link to="/" className="flex items-center">
-          <img src={logo} alt="Platform" className="h-10" />
+          <img
+            src={logo}
+            alt="Platform"
+            className="h-10 transition-transform duration-300 hover:scale-105 drop-shadow-[0_0_18px_hsl(var(--primary)/0.55)]"
+          />
         </Link>
         <div className="flex items-center gap-1">
           {navItems.map((item) => {
