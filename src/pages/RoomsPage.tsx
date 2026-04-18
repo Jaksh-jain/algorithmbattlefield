@@ -201,6 +201,50 @@ export default function RoomsPage() {
                         ))}
                       </div>
                     </div>
+
+                    <div>
+                      <label className="text-xs text-muted-foreground mb-1.5 flex items-center gap-1.5">
+                        <Layers className="w-3 h-3" /> Quiz Mode
+                      </label>
+                      <div className="grid grid-cols-3 gap-2">
+                        {MODES.map((m) => (
+                          <button
+                            key={m.id}
+                            onClick={() => setQuizMode(m.id)}
+                            className={`p-2 rounded-lg text-xs text-left transition-all ${
+                              quizMode === m.id
+                                ? "bg-secondary/15 text-secondary border border-secondary/40 neon-glow-purple"
+                                : "bg-muted/30 text-muted-foreground hover:bg-muted/50 border border-transparent"
+                            }`}
+                          >
+                            <div className="font-semibold text-sm">{m.label}</div>
+                            <div className="text-[10px] opacity-70">{m.desc}</div>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="text-xs text-muted-foreground mb-1.5 flex items-center gap-1.5">
+                        <Timer className="w-3 h-3" /> Time per question
+                      </label>
+                      <div className="grid grid-cols-3 gap-2">
+                        {TIMER_OPTIONS.map((t) => (
+                          <button
+                            key={t}
+                            onClick={() => setTimePerQ(t)}
+                            className={`p-2 rounded-lg text-sm font-mono font-semibold transition-all ${
+                              timePerQ === t
+                                ? "bg-neon-orange/15 text-neon-orange border border-neon-orange/40"
+                                : "bg-muted/30 text-muted-foreground hover:bg-muted/50 border border-transparent"
+                            }`}
+                          >
+                            {t}s
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
                     <div className="relative">
                       <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                       <input
