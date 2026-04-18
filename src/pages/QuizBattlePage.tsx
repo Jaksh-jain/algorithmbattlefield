@@ -119,11 +119,30 @@ export default function QuizBattlePage() {
   }, [answers, participants, questionIndex]);
 
   const handleSubmit = async () => {
-    if (selectedOption === null || !currentQ || submitted) return;
-    const isCorrect = selectedOption === currentQ.correctIndex;
+    if (!currentEntry || submitted) return;
     const timeTaken = (QUESTION_TIME_LIMIT - timeLeft) * 1000;
+
+    if (currentEntry.kind === "mcq") {
+      if (selectedOption === null) return;
+      const isCorrect = selectedOption === currentEntry.data.correctIndex;
+      setSubmitted(true);
+      await submitAnswer(questionIndex, selectedOption, isCorrect, timeTaken);
+      return;
+    }
+
+    // program
+    const q = currentEntry.data;
+    if (Object.keys(programSelections).length < q.blanks.length) return;
+    const { isCorrect, correctCount } = gradeProgramAnswer(q, programSelections);
     setSubmitted(true);
-    await submitAnswer(questionIndex, selectedOption, isCorrect, timeTaken);
+    // Encode selections as a single integer for the legacy `selected_option` column.
+    // Reserve -1 to mean "program submission, see payload".
+    await submitAnswer(questionIndex, -1, isCorrect, timeTaken, {
+      kind: "program",
+      selections: programSelections,
+      correctCount,
+      total: q.blanks.length,
+    });
   };
 
   const handleLeave = async () => {
@@ -324,16 +343,24 @@ export default function QuizBattlePage() {
                   {Math.floor(timeLeft / 60)}:{(timeLeft % 60).toString().padStart(2, "0")}
                 </span>
               </div>
-              {currentQ && (
+              {currentMcq && (
                 <span className={`text-xs px-2 py-0.5 rounded-full ${
-                  currentQ.type === "output" ? "bg-secondary/20 text-secondary" :
-                  currentQ.type === "complexity" ? "bg-neon-orange/20 text-neon-orange" :
-                  currentQ.type === "scenario" ? "bg-neon-cyan/20 text-neon-cyan" :
+                  currentMcq.type === "output" ? "bg-secondary/20 text-secondary" :
+                  currentMcq.type === "complexity" ? "bg-neon-orange/20 text-neon-orange" :
+                  currentMcq.type === "scenario" ? "bg-neon-cyan/20 text-neon-cyan" :
                   "bg-primary/20 text-primary"
                 }`}>
-                  {currentQ.type}
+                  {currentMcq.type}
                 </span>
               )}
+              {currentProgram && (
+                <span className="text-xs px-2 py-0.5 rounded-full bg-secondary/20 text-secondary flex items-center gap-1">
+                  <Layers className="w-3 h-3" /> program · {currentProgram.language}
+                </span>
+              )}
+              <span className="text-[10px] text-muted-foreground flex items-center gap-1">
+                <Timer className="w-3 h-3" /> {QUESTION_TIME_LIMIT}s
+              </span>
             </div>
             <div className="h-1.5 rounded-full bg-muted overflow-hidden">
               <motion.div
