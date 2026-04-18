@@ -163,7 +163,7 @@ function ProgramExecutionTrace({ q }: { q: ProgramQuestion }) {
   const fullCode = useMemo(() => {
     let s = q.code;
     for (const b of q.blanks) {
-      s = s.replaceAll(`[BLANK_${b.id}]`, b.options[b.correctIndex]);
+      s = s.split(`[BLANK_${b.id}]`).join(b.options[b.correctIndex]);
     }
     return s;
   }, [q]);
