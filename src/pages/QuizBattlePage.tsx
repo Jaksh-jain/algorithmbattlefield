@@ -3,14 +3,15 @@ import { useParams, useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Clock, Users, Trophy, Zap, ArrowLeft, Copy, Check, X,
-  SkipForward, StopCircle, Play, Flame, Star, Crown, Medal,
+  SkipForward, StopCircle, Play, Star, Crown, Medal, Layers, Timer,
 } from "lucide-react";
 import { useQuizRoom } from "@/hooks/useQuizRoom";
-import { getTopicByIdOrDefault, type MCQQuestion } from "@/lib/mcqQuestions";
+import { getTopicByIdOrDefault } from "@/lib/mcqQuestions";
+import { buildQuestionList, gradeProgramAnswer, type AnyQuestion, type QuizMode } from "@/lib/quizMode";
 import { getSessionId, getUsername } from "@/lib/session";
 import { useToast } from "@/hooks/use-toast";
-
-const QUESTION_TIME_LIMIT = 120; // 2 min
+import ProgramQuestionCard from "@/components/quiz/ProgramQuestionCard";
+import PostAnswerVisualization from "@/components/quiz/PostAnswerVisualization";
 
 const rankBadge = (rank: number) => {
   if (rank === 1) return { label: "Diamond", color: "text-neon-cyan", icon: Crown, bg: "bg-neon-cyan/10" };
@@ -31,10 +32,21 @@ export default function QuizBattlePage() {
   const sessionId = getSessionId();
   const userName = getUsername() || "Anonymous";
   const topic = useMemo(() => getTopicByIdOrDefault(room?.topic || "dsa"), [room?.topic]);
-  const currentQ: MCQQuestion | null = topic.questions[room?.current_question_index ?? 0] || null;
-  const totalQuestions = topic.questions.length;
+  const quizMode: QuizMode = (room?.quiz_mode as QuizMode) || "mcq";
+  const QUESTION_TIME_LIMIT = room?.time_per_question_sec ?? 60;
+
+  const questionList: AnyQuestion[] = useMemo(
+    () => buildQuestionList(room?.topic || "dsa", quizMode),
+    [room?.topic, quizMode]
+  );
+  const totalQuestions = questionList.length;
+  const currentEntry: AnyQuestion | null =
+    questionList[room?.current_question_index ?? 0] || null;
+  const currentMcq = currentEntry?.kind === "mcq" ? currentEntry.data : null;
+  const currentProgram = currentEntry?.kind === "program" ? currentEntry.data : null;
 
   const [selectedOption, setSelectedOption] = useState<number | null>(null);
+  const [programSelections, setProgramSelections] = useState<Record<number, number>>({});
   const [submitted, setSubmitted] = useState(false);
   const [timeLeft, setTimeLeft] = useState(QUESTION_TIME_LIMIT);
   const [showReveal, setShowReveal] = useState(false);
@@ -45,12 +57,13 @@ export default function QuizBattlePage() {
   // Reset state on question change
   useEffect(() => {
     setSelectedOption(null);
+    setProgramSelections({});
     setSubmitted(false);
     setShowReveal(false);
     setTimeLeft(QUESTION_TIME_LIMIT);
-  }, [questionIndex]);
+  }, [questionIndex, QUESTION_TIME_LIMIT]);
 
-  // Check if already answered
+  // Check if already answered (restore submitted state on reload / refetch)
   useEffect(() => {
     if (!myParticipant) return;
     const existing = answers.find(
@@ -58,7 +71,15 @@ export default function QuizBattlePage() {
     );
     if (existing) {
       setSubmitted(true);
-      setSelectedOption(existing.selected_option);
+      if (existing.selected_option >= 0) {
+        setSelectedOption(existing.selected_option);
+      }
+      const payload = (existing as { answer_payload?: { selections?: Record<string, number> } }).answer_payload;
+      if (payload?.selections) {
+        const restored: Record<number, number> = {};
+        for (const [k, v] of Object.entries(payload.selections)) restored[Number(k)] = v as number;
+        setProgramSelections(restored);
+      }
     }
   }, [answers, myParticipant, questionIndex]);
 
@@ -106,11 +127,30 @@ export default function QuizBattlePage() {
   }, [answers, participants, questionIndex]);
 
   const handleSubmit = async () => {
-    if (selectedOption === null || !currentQ || submitted) return;
-    const isCorrect = selectedOption === currentQ.correctIndex;
+    if (!currentEntry || submitted) return;
     const timeTaken = (QUESTION_TIME_LIMIT - timeLeft) * 1000;
+
+    if (currentEntry.kind === "mcq") {
+      if (selectedOption === null) return;
+      const isCorrect = selectedOption === currentEntry.data.correctIndex;
+      setSubmitted(true);
+      await submitAnswer(questionIndex, selectedOption, isCorrect, timeTaken);
+      return;
+    }
+
+    // program
+    const q = currentEntry.data;
+    if (Object.keys(programSelections).length < q.blanks.length) return;
+    const { isCorrect, correctCount } = gradeProgramAnswer(q, programSelections);
     setSubmitted(true);
-    await submitAnswer(questionIndex, selectedOption, isCorrect, timeTaken);
+    // Encode selections as a single integer for the legacy `selected_option` column.
+    // Reserve -1 to mean "program submission, see payload".
+    await submitAnswer(questionIndex, -1, isCorrect, timeTaken, {
+      kind: "program",
+      selections: programSelections,
+      correctCount,
+      total: q.blanks.length,
+    });
   };
 
   const handleLeave = async () => {
@@ -311,16 +351,24 @@ export default function QuizBattlePage() {
                   {Math.floor(timeLeft / 60)}:{(timeLeft % 60).toString().padStart(2, "0")}
                 </span>
               </div>
-              {currentQ && (
+              {currentMcq && (
                 <span className={`text-xs px-2 py-0.5 rounded-full ${
-                  currentQ.type === "output" ? "bg-secondary/20 text-secondary" :
-                  currentQ.type === "complexity" ? "bg-neon-orange/20 text-neon-orange" :
-                  currentQ.type === "scenario" ? "bg-neon-cyan/20 text-neon-cyan" :
+                  currentMcq.type === "output" ? "bg-secondary/20 text-secondary" :
+                  currentMcq.type === "complexity" ? "bg-neon-orange/20 text-neon-orange" :
+                  currentMcq.type === "scenario" ? "bg-neon-cyan/20 text-neon-cyan" :
                   "bg-primary/20 text-primary"
                 }`}>
-                  {currentQ.type}
+                  {currentMcq.type}
                 </span>
               )}
+              {currentProgram && (
+                <span className="text-xs px-2 py-0.5 rounded-full bg-secondary/20 text-secondary flex items-center gap-1">
+                  <Layers className="w-3 h-3" /> program · {currentProgram.language}
+                </span>
+              )}
+              <span className="text-[10px] text-muted-foreground flex items-center gap-1">
+                <Timer className="w-3 h-3" /> {QUESTION_TIME_LIMIT}s
+              </span>
             </div>
             <div className="h-1.5 rounded-full bg-muted overflow-hidden">
               <motion.div
@@ -341,79 +389,121 @@ export default function QuizBattlePage() {
                 exit={{ opacity: 0, x: -30 }}
                 className="flex-1 flex flex-col"
               >
-                <h3 className="text-xl font-display font-bold text-foreground mb-8 leading-relaxed">
-                  {currentQ?.question}
-                </h3>
+                {currentMcq && (
+                  <>
+                    <h3 className="text-xl font-display font-bold text-foreground mb-8 leading-relaxed">
+                      {currentMcq.question}
+                    </h3>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 flex-1">
-                  {currentQ?.options.map((opt, i) => {
-                    const isSelected = selectedOption === i;
-                    const isCorrect = currentQ.correctIndex === i;
-                    const showResult = submitted || showReveal;
-                    let optionClass = "glass-panel p-4 cursor-pointer transition-all duration-300 hover:border-primary/40 text-left";
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3 flex-1">
+                      {currentMcq.options.map((opt, i) => {
+                        const isSelected = selectedOption === i;
+                        const isCorrect = currentMcq.correctIndex === i;
+                        const showResult = submitted || showReveal;
+                        let optionClass = "glass-panel p-4 cursor-pointer transition-all duration-300 hover:border-primary/40 text-left";
 
-                    if (showResult) {
-                      if (isCorrect) optionClass = "glass-panel p-4 border-2 border-neon-cyan/60 bg-neon-cyan/10 text-left";
-                      else if (isSelected && !isCorrect) optionClass = "glass-panel p-4 border-2 border-destructive/60 bg-destructive/10 text-left";
-                      else optionClass = "glass-panel p-4 opacity-50 text-left";
-                    } else if (isSelected) {
-                      optionClass = "glass-panel p-4 border-2 border-primary/60 bg-primary/10 text-left neon-glow-blue";
+                        if (showResult) {
+                          if (isCorrect) optionClass = "glass-panel p-4 border-2 border-neon-cyan/60 bg-neon-cyan/10 text-left";
+                          else if (isSelected && !isCorrect) optionClass = "glass-panel p-4 border-2 border-destructive/60 bg-destructive/10 text-left";
+                          else optionClass = "glass-panel p-4 opacity-50 text-left";
+                        } else if (isSelected) {
+                          optionClass = "glass-panel p-4 border-2 border-primary/60 bg-primary/10 text-left neon-glow-blue";
+                        }
+
+                        return (
+                          <motion.button
+                            key={i}
+                            whileHover={!showResult ? { scale: 1.02 } : {}}
+                            whileTap={!showResult ? { scale: 0.98 } : {}}
+                            onClick={() => !submitted && !showReveal && setSelectedOption(i)}
+                            disabled={submitted || showReveal}
+                            className={optionClass}
+                          >
+                            <div className="flex items-start gap-3">
+                              <span className={`w-8 h-8 rounded-lg flex items-center justify-center text-sm font-bold shrink-0 ${
+                                showResult && isCorrect ? "bg-neon-cyan/20 text-neon-cyan" :
+                                showResult && isSelected && !isCorrect ? "bg-destructive/20 text-destructive" :
+                                isSelected ? "bg-primary/20 text-primary" :
+                                "bg-muted/50 text-muted-foreground"
+                              }`}>
+                                {showResult ? (isCorrect ? <Check className="w-4 h-4" /> : isSelected ? <X className="w-4 h-4" /> : String.fromCharCode(65 + i)) : String.fromCharCode(65 + i)}
+                              </span>
+                              <span className="text-foreground text-sm leading-relaxed">{opt}</span>
+                            </div>
+                            {showResult && totalAnswered > 0 && (
+                              <div className="mt-3 h-1 rounded-full bg-muted overflow-hidden">
+                                <motion.div
+                                  initial={{ width: 0 }}
+                                  animate={{ width: `${(optionCounts[i] / totalAnswered) * 100}%` }}
+                                  className={`h-full rounded-full ${isCorrect ? "bg-neon-cyan" : "bg-muted-foreground/40"}`}
+                                />
+                              </div>
+                            )}
+                          </motion.button>
+                        );
+                      })}
+                    </div>
+                  </>
+                )}
+
+                {currentProgram && (
+                  <ProgramQuestionCard
+                    question={currentProgram}
+                    selections={programSelections}
+                    onSelect={(blankId, idx) =>
+                      !submitted && !showReveal &&
+                      setProgramSelections((prev) => ({ ...prev, [blankId]: idx }))
                     }
+                    locked={submitted || showReveal}
+                    showResult={submitted || showReveal}
+                  />
+                )}
 
-                    return (
-                      <motion.button
-                        key={i}
-                        whileHover={!showResult ? { scale: 1.02 } : {}}
-                        whileTap={!showResult ? { scale: 0.98 } : {}}
-                        onClick={() => !submitted && !showReveal && setSelectedOption(i)}
-                        disabled={submitted || showReveal}
-                        className={optionClass}
-                      >
-                        <div className="flex items-start gap-3">
-                          <span className={`w-8 h-8 rounded-lg flex items-center justify-center text-sm font-bold shrink-0 ${
-                            showResult && isCorrect ? "bg-neon-cyan/20 text-neon-cyan" :
-                            showResult && isSelected && !isCorrect ? "bg-destructive/20 text-destructive" :
-                            isSelected ? "bg-primary/20 text-primary" :
-                            "bg-muted/50 text-muted-foreground"
-                          }`}>
-                            {showResult ? (isCorrect ? <Check className="w-4 h-4" /> : isSelected ? <X className="w-4 h-4" /> : String.fromCharCode(65 + i)) : String.fromCharCode(65 + i)}
-                          </span>
-                          <span className="text-foreground text-sm leading-relaxed">{opt}</span>
-                        </div>
-                        {/* Heatmap bar */}
-                        {showResult && totalAnswered > 0 && (
-                          <div className="mt-3 h-1 rounded-full bg-muted overflow-hidden">
-                            <motion.div
-                              initial={{ width: 0 }}
-                              animate={{ width: `${(optionCounts[i] / totalAnswered) * 100}%` }}
-                              className={`h-full rounded-full ${isCorrect ? "bg-neon-cyan" : "bg-muted-foreground/40"}`}
-                            />
-                          </div>
-                        )}
-                      </motion.button>
-                    );
-                  })}
-                </div>
+                {/* Post-answer visualization */}
+                {(submitted || showReveal) && currentEntry && (
+                  <motion.div
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="mt-6"
+                  >
+                    <PostAnswerVisualization question={currentEntry} />
+                  </motion.div>
+                )}
 
                 {/* Submit / Status */}
                 <div className="mt-6 flex items-center justify-between">
                   {!submitted && !showReveal ? (
-                    <button
-                      onClick={handleSubmit}
-                      disabled={selectedOption === null}
-                      className="px-8 py-3 rounded-xl bg-primary/20 text-primary hover:bg-primary/30 transition-all font-semibold disabled:opacity-30"
-                    >
-                      Submit Answer
-                    </button>
+                    (() => {
+                      const disabled = currentMcq
+                        ? selectedOption === null
+                        : currentProgram
+                        ? Object.keys(programSelections).length < currentProgram.blanks.length
+                        : true;
+                      return (
+                        <button
+                          onClick={handleSubmit}
+                          disabled={disabled}
+                          className="px-8 py-3 rounded-xl bg-primary/20 text-primary hover:bg-primary/30 transition-all font-semibold disabled:opacity-30"
+                        >
+                          Submit Answer
+                        </button>
+                      );
+                    })()
                   ) : (
                     <div className="flex items-center gap-2">
-                      {submitted && selectedOption === currentQ?.correctIndex ? (
-                        <span className="text-neon-cyan font-semibold flex items-center gap-1"><Check className="w-4 h-4" /> Correct!</span>
-                      ) : submitted ? (
-                        <span className="text-destructive font-semibold flex items-center gap-1"><X className="w-4 h-4" /> Wrong</span>
-                      ) : (
-                        <span className="text-muted-foreground">Time's up!</span>
-                      )}
+                      {(() => {
+                        if (!submitted) return <span className="text-muted-foreground">Time's up!</span>;
+                        const correct = currentMcq
+                          ? selectedOption === currentMcq.correctIndex
+                          : currentProgram
+                          ? gradeProgramAnswer(currentProgram, programSelections).isCorrect
+                          : false;
+                        return correct ? (
+                          <span className="text-neon-cyan font-semibold flex items-center gap-1"><Check className="w-4 h-4" /> Correct!</span>
+                        ) : (
+                          <span className="text-destructive font-semibold flex items-center gap-1"><X className="w-4 h-4" /> Wrong</span>
+                        );
+                      })()}
                       {fastestCorrect && (
                         <span className="text-xs text-neon-orange ml-3 flex items-center gap-1">
                           <Zap className="w-3 h-3" /> Fastest: {fastestCorrect}

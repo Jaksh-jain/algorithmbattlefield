@@ -16,6 +16,7 @@ export type Database = {
     Tables: {
       room_answers: {
         Row: {
+          answer_payload: Json | null
           answered_at: string
           id: string
           is_correct: boolean
@@ -26,6 +27,7 @@ export type Database = {
           time_taken_ms: number
         }
         Insert: {
+          answer_payload?: Json | null
           answered_at?: string
           id?: string
           is_correct?: boolean
@@ -36,6 +38,7 @@ export type Database = {
           time_taken_ms?: number
         }
         Update: {
+          answer_payload?: Json | null
           answered_at?: string
           id?: string
           is_correct?: boolean
@@ -118,11 +121,13 @@ export type Database = {
           max_participants: number
           problem_id: number
           question_started_at: string | null
+          quiz_mode: string
           quiz_started: boolean
           room_code: string
           room_password: string
           started_at: string | null
           status: string
+          time_per_question_sec: number
           topic: string
         }
         Insert: {
@@ -133,11 +138,13 @@ export type Database = {
           max_participants?: number
           problem_id?: number
           question_started_at?: string | null
+          quiz_mode?: string
           quiz_started?: boolean
           room_code: string
           room_password?: string
           started_at?: string | null
           status?: string
+          time_per_question_sec?: number
           topic?: string
         }
         Update: {
@@ -148,11 +155,13 @@ export type Database = {
           max_participants?: number
           problem_id?: number
           question_started_at?: string | null
+          quiz_mode?: string
           quiz_started?: boolean
           room_code?: string
           room_password?: string
           started_at?: string | null
           status?: string
+          time_per_question_sec?: number
           topic?: string
         }
         Relationships: []
