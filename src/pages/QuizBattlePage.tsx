@@ -381,59 +381,86 @@ export default function QuizBattlePage() {
                 exit={{ opacity: 0, x: -30 }}
                 className="flex-1 flex flex-col"
               >
-                <h3 className="text-xl font-display font-bold text-foreground mb-8 leading-relaxed">
-                  {currentQ?.question}
-                </h3>
+                {currentMcq && (
+                  <>
+                    <h3 className="text-xl font-display font-bold text-foreground mb-8 leading-relaxed">
+                      {currentMcq.question}
+                    </h3>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 flex-1">
-                  {currentQ?.options.map((opt, i) => {
-                    const isSelected = selectedOption === i;
-                    const isCorrect = currentQ.correctIndex === i;
-                    const showResult = submitted || showReveal;
-                    let optionClass = "glass-panel p-4 cursor-pointer transition-all duration-300 hover:border-primary/40 text-left";
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3 flex-1">
+                      {currentMcq.options.map((opt, i) => {
+                        const isSelected = selectedOption === i;
+                        const isCorrect = currentMcq.correctIndex === i;
+                        const showResult = submitted || showReveal;
+                        let optionClass = "glass-panel p-4 cursor-pointer transition-all duration-300 hover:border-primary/40 text-left";
 
-                    if (showResult) {
-                      if (isCorrect) optionClass = "glass-panel p-4 border-2 border-neon-cyan/60 bg-neon-cyan/10 text-left";
-                      else if (isSelected && !isCorrect) optionClass = "glass-panel p-4 border-2 border-destructive/60 bg-destructive/10 text-left";
-                      else optionClass = "glass-panel p-4 opacity-50 text-left";
-                    } else if (isSelected) {
-                      optionClass = "glass-panel p-4 border-2 border-primary/60 bg-primary/10 text-left neon-glow-blue";
+                        if (showResult) {
+                          if (isCorrect) optionClass = "glass-panel p-4 border-2 border-neon-cyan/60 bg-neon-cyan/10 text-left";
+                          else if (isSelected && !isCorrect) optionClass = "glass-panel p-4 border-2 border-destructive/60 bg-destructive/10 text-left";
+                          else optionClass = "glass-panel p-4 opacity-50 text-left";
+                        } else if (isSelected) {
+                          optionClass = "glass-panel p-4 border-2 border-primary/60 bg-primary/10 text-left neon-glow-blue";
+                        }
+
+                        return (
+                          <motion.button
+                            key={i}
+                            whileHover={!showResult ? { scale: 1.02 } : {}}
+                            whileTap={!showResult ? { scale: 0.98 } : {}}
+                            onClick={() => !submitted && !showReveal && setSelectedOption(i)}
+                            disabled={submitted || showReveal}
+                            className={optionClass}
+                          >
+                            <div className="flex items-start gap-3">
+                              <span className={`w-8 h-8 rounded-lg flex items-center justify-center text-sm font-bold shrink-0 ${
+                                showResult && isCorrect ? "bg-neon-cyan/20 text-neon-cyan" :
+                                showResult && isSelected && !isCorrect ? "bg-destructive/20 text-destructive" :
+                                isSelected ? "bg-primary/20 text-primary" :
+                                "bg-muted/50 text-muted-foreground"
+                              }`}>
+                                {showResult ? (isCorrect ? <Check className="w-4 h-4" /> : isSelected ? <X className="w-4 h-4" /> : String.fromCharCode(65 + i)) : String.fromCharCode(65 + i)}
+                              </span>
+                              <span className="text-foreground text-sm leading-relaxed">{opt}</span>
+                            </div>
+                            {showResult && totalAnswered > 0 && (
+                              <div className="mt-3 h-1 rounded-full bg-muted overflow-hidden">
+                                <motion.div
+                                  initial={{ width: 0 }}
+                                  animate={{ width: `${(optionCounts[i] / totalAnswered) * 100}%` }}
+                                  className={`h-full rounded-full ${isCorrect ? "bg-neon-cyan" : "bg-muted-foreground/40"}`}
+                                />
+                              </div>
+                            )}
+                          </motion.button>
+                        );
+                      })}
+                    </div>
+                  </>
+                )}
+
+                {currentProgram && (
+                  <ProgramQuestionCard
+                    question={currentProgram}
+                    selections={programSelections}
+                    onSelect={(blankId, idx) =>
+                      !submitted && !showReveal &&
+                      setProgramSelections((prev) => ({ ...prev, [blankId]: idx }))
                     }
+                    locked={submitted || showReveal}
+                    showResult={submitted || showReveal}
+                  />
+                )}
 
-                    return (
-                      <motion.button
-                        key={i}
-                        whileHover={!showResult ? { scale: 1.02 } : {}}
-                        whileTap={!showResult ? { scale: 0.98 } : {}}
-                        onClick={() => !submitted && !showReveal && setSelectedOption(i)}
-                        disabled={submitted || showReveal}
-                        className={optionClass}
-                      >
-                        <div className="flex items-start gap-3">
-                          <span className={`w-8 h-8 rounded-lg flex items-center justify-center text-sm font-bold shrink-0 ${
-                            showResult && isCorrect ? "bg-neon-cyan/20 text-neon-cyan" :
-                            showResult && isSelected && !isCorrect ? "bg-destructive/20 text-destructive" :
-                            isSelected ? "bg-primary/20 text-primary" :
-                            "bg-muted/50 text-muted-foreground"
-                          }`}>
-                            {showResult ? (isCorrect ? <Check className="w-4 h-4" /> : isSelected ? <X className="w-4 h-4" /> : String.fromCharCode(65 + i)) : String.fromCharCode(65 + i)}
-                          </span>
-                          <span className="text-foreground text-sm leading-relaxed">{opt}</span>
-                        </div>
-                        {/* Heatmap bar */}
-                        {showResult && totalAnswered > 0 && (
-                          <div className="mt-3 h-1 rounded-full bg-muted overflow-hidden">
-                            <motion.div
-                              initial={{ width: 0 }}
-                              animate={{ width: `${(optionCounts[i] / totalAnswered) * 100}%` }}
-                              className={`h-full rounded-full ${isCorrect ? "bg-neon-cyan" : "bg-muted-foreground/40"}`}
-                            />
-                          </div>
-                        )}
-                      </motion.button>
-                    );
-                  })}
-                </div>
+                {/* Post-answer visualization */}
+                {(submitted || showReveal) && currentEntry && (
+                  <motion.div
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="mt-6"
+                  >
+                    <PostAnswerVisualization question={currentEntry} />
+                  </motion.div>
+                )}
 
                 {/* Submit / Status */}
                 <div className="mt-6 flex items-center justify-between">
