@@ -98,20 +98,22 @@ export default function QuizBattlePage() {
     }
   }, [answers, myParticipant, questionIndex]);
 
-  // Timer
+  // Timer — synced via room.question_started_at + pause state. NEVER auto-advances.
+  const isPaused = !!room?.timer_paused_at;
   useEffect(() => {
     if (!room?.quiz_started || room?.status !== "active" || !room?.question_started_at) return;
     const startedAt = new Date(room.question_started_at).getTime();
-    const interval = setInterval(() => {
-      const elapsed = Math.floor((Date.now() - startedAt) / 1000);
-      const remaining = Math.max(0, QUESTION_TIME_LIMIT - elapsed);
-      setTimeLeft(remaining);
-      if (remaining === 0) {
-        setShowReveal(true);
-      }
-    }, 250);
+    const pauseOffset = room.timer_pause_offset_ms || 0;
+    const computeRemaining = () => {
+      const now = room.timer_paused_at ? new Date(room.timer_paused_at).getTime() : Date.now();
+      const elapsed = Math.floor((now - startedAt - pauseOffset) / 1000);
+      return Math.max(0, QUESTION_TIME_LIMIT - elapsed);
+    };
+    setTimeLeft(computeRemaining());
+    if (room.timer_paused_at) return; // freeze countdown when paused
+    const interval = setInterval(() => setTimeLeft(computeRemaining()), 250);
     return () => clearInterval(interval);
-  }, [room?.quiz_started, room?.status, room?.question_started_at]);
+  }, [room?.quiz_started, room?.status, room?.question_started_at, room?.timer_paused_at, room?.timer_pause_offset_ms, QUESTION_TIME_LIMIT]);
 
   // Compute leaderboard
   const leaderboard = useMemo(() => {
