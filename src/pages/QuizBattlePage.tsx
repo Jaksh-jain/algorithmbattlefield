@@ -438,6 +438,7 @@ export default function QuizBattlePage() {
                         const isSelected = selectedOption === i;
                         const isCorrect = currentMcq.correctIndex === i;
                         const showResult = submitted || showReveal;
+                        const locked = submitted || showReveal || timeLeft === 0;
                         let optionClass = "glass-panel p-4 cursor-pointer transition-all duration-300 hover:border-primary/40 text-left";
 
                         if (showResult) {
@@ -446,15 +447,17 @@ export default function QuizBattlePage() {
                           else optionClass = "glass-panel p-4 opacity-50 text-left";
                         } else if (isSelected) {
                           optionClass = "glass-panel p-4 border-2 border-primary/60 bg-primary/10 text-left neon-glow-blue";
+                        } else if (locked) {
+                          optionClass = "glass-panel p-4 opacity-60 text-left cursor-not-allowed";
                         }
 
                         return (
                           <motion.button
                             key={i}
-                            whileHover={!showResult ? { scale: 1.02 } : {}}
-                            whileTap={!showResult ? { scale: 0.98 } : {}}
-                            onClick={() => !submitted && !showReveal && setSelectedOption(i)}
-                            disabled={submitted || showReveal}
+                            whileHover={!locked ? { scale: 1.02 } : {}}
+                            whileTap={!locked ? { scale: 0.98 } : {}}
+                            onClick={() => !locked && setSelectedOption(i)}
+                            disabled={locked}
                             className={optionClass}
                           >
                             <div className="flex items-start gap-3">
