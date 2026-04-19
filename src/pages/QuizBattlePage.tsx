@@ -249,11 +249,32 @@ export default function QuizBattlePage() {
               <p className="text-muted-foreground animate-pulse">Waiting for host to start...</p>
             )}
 
-            <button onClick={handleLeave} className="mt-4 text-sm text-muted-foreground hover:text-destructive transition-colors flex items-center gap-1 mx-auto">
-              <ArrowLeft className="w-3 h-3" /> Leave Room
-            </button>
+            <div className="mt-4 flex items-center justify-center gap-4">
+              <button onClick={handleLeave} className="text-sm text-muted-foreground hover:text-destructive transition-colors flex items-center gap-1">
+                <ArrowLeft className="w-3 h-3" /> Leave Room
+              </button>
+              {isHost && (
+                <button onClick={() => setConfirmDelete(true)} className="text-sm text-muted-foreground hover:text-destructive transition-colors flex items-center gap-1">
+                  <Trash2 className="w-3 h-3" /> Delete Room
+                </button>
+              )}
+            </div>
           </motion.div>
         </div>
+
+        <ConfirmDeleteModal
+          open={confirmDelete}
+          busy={deleteBusy}
+          onCancel={() => setConfirmDelete(false)}
+          onConfirm={async () => {
+            setDeleteBusy(true);
+            await deleteRoom();
+            setDeleteBusy(false);
+            setConfirmDelete(false);
+            toast({ title: "Room deleted", description: "All participants have been disconnected." });
+            navigate("/");
+          }}
+        />
       </div>
     );
   }
