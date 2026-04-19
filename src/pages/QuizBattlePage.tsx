@@ -51,6 +51,16 @@ export default function QuizBattlePage() {
   const [submitted, setSubmitted] = useState(false);
   const [timeLeft, setTimeLeft] = useState(QUESTION_TIME_LIMIT);
   const [showReveal, setShowReveal] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [deleteBusy, setDeleteBusy] = useState(false);
+
+  // Redirect when room is deleted
+  useEffect(() => {
+    if (roomDeleted) {
+      toast({ title: "Room has been deleted", description: "You have been disconnected.", variant: "destructive" });
+      navigate("/");
+    }
+  }, [roomDeleted, navigate, toast]);
 
   const isHost = myParticipant?.is_host || false;
   const questionIndex = room?.current_question_index ?? 0;
