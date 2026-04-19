@@ -164,6 +164,8 @@ export function useQuizRoom(roomCode: string | null) {
         current_question_index: 0,
         question_started_at: new Date().toISOString(),
         started_at: new Date().toISOString(),
+        timer_paused_at: null,
+        timer_pause_offset_ms: 0,
       })
       .eq("id", room.id);
   }, [room]);
@@ -175,6 +177,64 @@ export function useQuizRoom(roomCode: string | null) {
       .update({
         current_question_index: room.current_question_index + 1,
         question_started_at: new Date().toISOString(),
+        timer_paused_at: null,
+        timer_pause_offset_ms: 0,
+      })
+      .eq("id", room.id);
+  }, [room]);
+
+  const previousQuestion = useCallback(async () => {
+    if (!room || room.current_question_index <= 0) return;
+    await supabase
+      .from("rooms")
+      .update({
+        current_question_index: room.current_question_index - 1,
+        question_started_at: new Date().toISOString(),
+        timer_paused_at: null,
+        timer_pause_offset_ms: 0,
+      })
+      .eq("id", room.id);
+  }, [room]);
+
+  const adjustTime = useCallback(
+    async (deltaSec: number) => {
+      if (!room || !room.question_started_at) return;
+      // Shift question_started_at later (to add time) or earlier (to remove time).
+      const current = new Date(room.question_started_at).getTime();
+      const shifted = new Date(current + deltaSec * 1000).toISOString();
+      await supabase.from("rooms").update({ question_started_at: shifted }).eq("id", room.id);
+    },
+    [room]
+  );
+
+  const resetTimer = useCallback(async () => {
+    if (!room) return;
+    await supabase
+      .from("rooms")
+      .update({
+        question_started_at: new Date().toISOString(),
+        timer_paused_at: null,
+        timer_pause_offset_ms: 0,
+      })
+      .eq("id", room.id);
+  }, [room]);
+
+  const pauseTimer = useCallback(async () => {
+    if (!room || room.timer_paused_at) return;
+    await supabase
+      .from("rooms")
+      .update({ timer_paused_at: new Date().toISOString() })
+      .eq("id", room.id);
+  }, [room]);
+
+  const resumeTimer = useCallback(async () => {
+    if (!room || !room.timer_paused_at) return;
+    const pausedDuration = Date.now() - new Date(room.timer_paused_at).getTime();
+    await supabase
+      .from("rooms")
+      .update({
+        timer_paused_at: null,
+        timer_pause_offset_ms: room.timer_pause_offset_ms + pausedDuration,
       })
       .eq("id", room.id);
   }, [room]);
