@@ -98,6 +98,11 @@ export function useQuizRoom(roomCode: string | null) {
         "postgres_changes",
         { event: "*", schema: "public", table: "rooms", filter: `room_code=eq.${roomCode}` },
         (payload) => {
+          if (payload.eventType === "DELETE") {
+            setRoomDeleted(true);
+            setRoom(null);
+            return;
+          }
           if (payload.eventType === "UPDATE" || payload.eventType === "INSERT") {
             setRoom(payload.new as unknown as RoomData);
           }
