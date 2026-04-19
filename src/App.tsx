@@ -5,6 +5,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import ParticleBackground from "@/components/ParticleBackground";
 import Navbar from "@/components/Navbar";
+import { ThemeProvider } from "@/components/ThemeProvider";
 import RoomsPage from "./pages/RoomsPage";
 import ArenaPage from "./pages/ArenaPage";
 import QuizBattlePage from "./pages/QuizBattlePage";
@@ -16,22 +17,24 @@ const queryClient = new QueryClient();
 
 const App = () => (
   <QueryClientProvider client={queryClient}>
-    <TooltipProvider>
-      <Toaster />
-      <Sonner />
-      <ParticleBackground />
-      <BrowserRouter>
+    <ThemeProvider>
+      <TooltipProvider>
+        <Toaster />
+        <Sonner />
+        <ParticleBackground />
+        <BrowserRouter>
         <Navbar />
-        <Routes>
-          <Route path="/" element={<RoomsPage />} />
-          <Route path="/arena/:roomCode" element={<ArenaPage />} />
-          <Route path="/quiz/:roomCode" element={<QuizBattlePage />} />
-          <Route path="/visualize" element={<VisualizePage />} />
-          <Route path="/leaderboard" element={<LeaderboardPage />} />
-          <Route path="*" element={<NotFound />} />
-        </Routes>
-      </BrowserRouter>
-    </TooltipProvider>
+          <Routes>
+            <Route path="/" element={<RoomsPage />} />
+            <Route path="/arena/:roomCode" element={<ArenaPage />} />
+            <Route path="/quiz/:roomCode" element={<QuizBattlePage />} />
+            <Route path="/visualize" element={<VisualizePage />} />
+            <Route path="/leaderboard" element={<LeaderboardPage />} />
+            <Route path="*" element={<NotFound />} />
+          </Routes>
+        </BrowserRouter>
+      </TooltipProvider>
+    </ThemeProvider>
   </QueryClientProvider>
 );
 
