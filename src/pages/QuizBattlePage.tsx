@@ -509,14 +509,22 @@ export default function QuizBattlePage() {
                 )}
 
                 {/* Submit / Status */}
-                <div className="mt-6 flex items-center justify-between">
-                  {!submitted && !showReveal ? (
+                <div className="mt-6 flex items-center justify-between flex-wrap gap-3">
+                  {!submitted ? (
                     (() => {
-                      const disabled = currentMcq
+                      const timeUp = timeLeft === 0;
+                      const disabled = timeUp || (currentMcq
                         ? selectedOption === null
                         : currentProgram
                         ? Object.keys(programSelections).length < currentProgram.blanks.length
-                        : true;
+                        : true);
+                      if (timeUp) {
+                        return (
+                          <span className="text-sm text-muted-foreground italic flex items-center gap-2">
+                            <Clock className="w-4 h-4" /> Time's up — waiting for instructor to proceed…
+                          </span>
+                        );
+                      }
                       return (
                         <button
                           onClick={handleSubmit}
@@ -528,20 +536,20 @@ export default function QuizBattlePage() {
                       );
                     })()
                   ) : (
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 flex-wrap">
                       {(() => {
-                        if (!submitted) return <span className="text-muted-foreground">Time's up!</span>;
                         const correct = currentMcq
                           ? selectedOption === currentMcq.correctIndex
                           : currentProgram
                           ? gradeProgramAnswer(currentProgram, programSelections).isCorrect
                           : false;
                         return correct ? (
-                          <span className="text-neon-cyan font-semibold flex items-center gap-1"><Check className="w-4 h-4" /> Correct!</span>
+                          <span className="text-neon-cyan font-semibold flex items-center gap-1"><Check className="w-4 h-4" /> Submitted · Correct!</span>
                         ) : (
-                          <span className="text-destructive font-semibold flex items-center gap-1"><X className="w-4 h-4" /> Wrong</span>
+                          <span className="text-destructive font-semibold flex items-center gap-1"><X className="w-4 h-4" /> Submitted · Wrong</span>
                         );
                       })()}
+                      <span className="text-xs text-muted-foreground italic">Waiting for instructor to proceed…</span>
                       {fastestCorrect && (
                         <span className="text-xs text-neon-orange ml-3 flex items-center gap-1">
                           <Zap className="w-3 h-3" /> Fastest: {fastestCorrect}
