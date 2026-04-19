@@ -24,16 +24,17 @@ const App = () => (
         <ParticleBackground />
         <BrowserRouter>
         <Navbar />
-        <Routes>
-          <Route path="/" element={<RoomsPage />} />
-          <Route path="/arena/:roomCode" element={<ArenaPage />} />
-          <Route path="/quiz/:roomCode" element={<QuizBattlePage />} />
-          <Route path="/visualize" element={<VisualizePage />} />
-          <Route path="/leaderboard" element={<LeaderboardPage />} />
-          <Route path="*" element={<NotFound />} />
-        </Routes>
-      </BrowserRouter>
-    </TooltipProvider>
+          <Routes>
+            <Route path="/" element={<RoomsPage />} />
+            <Route path="/arena/:roomCode" element={<ArenaPage />} />
+            <Route path="/quiz/:roomCode" element={<QuizBattlePage />} />
+            <Route path="/visualize" element={<VisualizePage />} />
+            <Route path="/leaderboard" element={<LeaderboardPage />} />
+            <Route path="*" element={<NotFound />} />
+          </Routes>
+        </BrowserRouter>
+      </TooltipProvider>
+    </ThemeProvider>
   </QueryClientProvider>
 );
 
