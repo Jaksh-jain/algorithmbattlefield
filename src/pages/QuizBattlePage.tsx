@@ -27,7 +27,7 @@ export default function QuizBattlePage() {
   const { toast } = useToast();
   const {
     room, participants, myParticipant, answers, reactions,
-    loading, error, startQuiz, nextQuestion, endQuiz, submitAnswer, sendReaction, leaveRoom,
+    loading, error, roomDeleted, startQuiz, nextQuestion, endQuiz, submitAnswer, sendReaction, leaveRoom, deleteRoom,
   } = useQuizRoom(roomCode || null);
 
   const sessionId = getSessionId();
