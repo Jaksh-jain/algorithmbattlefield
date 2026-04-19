@@ -12,6 +12,7 @@ import { getSessionId, getUsername } from "@/lib/session";
 import { useToast } from "@/hooks/use-toast";
 import ProgramQuestionCard from "@/components/quiz/ProgramQuestionCard";
 import PostAnswerVisualization from "@/components/quiz/PostAnswerVisualization";
+import ConfirmDeleteModal from "@/components/quiz/ConfirmDeleteModal";
 
 const rankBadge = (rank: number) => {
   if (rank === 1) return { label: "Diamond", color: "text-neon-cyan", icon: Crown, bg: "bg-neon-cyan/10" };
