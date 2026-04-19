@@ -3,7 +3,7 @@ import { useParams, useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Clock, Users, Trophy, Zap, ArrowLeft, Copy, Check, X,
-  SkipForward, StopCircle, Play, Star, Crown, Medal, Layers, Timer,
+  SkipForward, StopCircle, Play, Star, Crown, Medal, Layers, Timer, Trash2,
 } from "lucide-react";
 import { useQuizRoom } from "@/hooks/useQuizRoom";
 import { getTopicByIdOrDefault } from "@/lib/mcqQuestions";
@@ -12,6 +12,7 @@ import { getSessionId, getUsername } from "@/lib/session";
 import { useToast } from "@/hooks/use-toast";
 import ProgramQuestionCard from "@/components/quiz/ProgramQuestionCard";
 import PostAnswerVisualization from "@/components/quiz/PostAnswerVisualization";
+import ConfirmDeleteModal from "@/components/quiz/ConfirmDeleteModal";
 
 const rankBadge = (rank: number) => {
   if (rank === 1) return { label: "Diamond", color: "text-neon-cyan", icon: Crown, bg: "bg-neon-cyan/10" };
@@ -26,7 +27,7 @@ export default function QuizBattlePage() {
   const { toast } = useToast();
   const {
     room, participants, myParticipant, answers, reactions,
-    loading, error, startQuiz, nextQuestion, endQuiz, submitAnswer, sendReaction, leaveRoom,
+    loading, error, roomDeleted, startQuiz, nextQuestion, endQuiz, submitAnswer, sendReaction, leaveRoom, deleteRoom,
   } = useQuizRoom(roomCode || null);
 
   const sessionId = getSessionId();
@@ -50,6 +51,16 @@ export default function QuizBattlePage() {
   const [submitted, setSubmitted] = useState(false);
   const [timeLeft, setTimeLeft] = useState(QUESTION_TIME_LIMIT);
   const [showReveal, setShowReveal] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [deleteBusy, setDeleteBusy] = useState(false);
+
+  // Redirect when room is deleted
+  useEffect(() => {
+    if (roomDeleted) {
+      toast({ title: "Room has been deleted", description: "You have been disconnected.", variant: "destructive" });
+      navigate("/");
+    }
+  }, [roomDeleted, navigate, toast]);
 
   const isHost = myParticipant?.is_host || false;
   const questionIndex = room?.current_question_index ?? 0;
@@ -238,11 +249,32 @@ export default function QuizBattlePage() {
               <p className="text-muted-foreground animate-pulse">Waiting for host to start...</p>
             )}
 
-            <button onClick={handleLeave} className="mt-4 text-sm text-muted-foreground hover:text-destructive transition-colors flex items-center gap-1 mx-auto">
-              <ArrowLeft className="w-3 h-3" /> Leave Room
-            </button>
+            <div className="mt-4 flex items-center justify-center gap-4">
+              <button onClick={handleLeave} className="text-sm text-muted-foreground hover:text-destructive transition-colors flex items-center gap-1">
+                <ArrowLeft className="w-3 h-3" /> Leave Room
+              </button>
+              {isHost && (
+                <button onClick={() => setConfirmDelete(true)} className="text-sm text-muted-foreground hover:text-destructive transition-colors flex items-center gap-1">
+                  <Trash2 className="w-3 h-3" /> Delete Room
+                </button>
+              )}
+            </div>
           </motion.div>
         </div>
+
+        <ConfirmDeleteModal
+          open={confirmDelete}
+          busy={deleteBusy}
+          onCancel={() => setConfirmDelete(false)}
+          onConfirm={async () => {
+            setDeleteBusy(true);
+            await deleteRoom();
+            setDeleteBusy(false);
+            setConfirmDelete(false);
+            toast({ title: "Room deleted", description: "All participants have been disconnected." });
+            navigate("/");
+          }}
+        />
       </div>
     );
   }

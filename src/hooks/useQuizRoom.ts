@@ -48,6 +48,7 @@ export function useQuizRoom(roomCode: string | null) {
   const [reactions, setReactions] = useState<Reaction[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [roomDeleted, setRoomDeleted] = useState(false);
   const channelRef = useRef<RealtimeChannel | null>(null);
   const sessionId = getSessionId();
 
@@ -97,6 +98,11 @@ export function useQuizRoom(roomCode: string | null) {
         "postgres_changes",
         { event: "*", schema: "public", table: "rooms", filter: `room_code=eq.${roomCode}` },
         (payload) => {
+          if (payload.eventType === "DELETE") {
+            setRoomDeleted(true);
+            setRoom(null);
+            return;
+          }
           if (payload.eventType === "UPDATE" || payload.eventType === "INSERT") {
             setRoom(payload.new as unknown as RoomData);
           }
@@ -227,6 +233,14 @@ export function useQuizRoom(roomCode: string | null) {
     await supabase.from("room_participants").delete().eq("id", myParticipant.id);
   }, [myParticipant]);
 
+  const deleteRoom = useCallback(async () => {
+    if (!room) return;
+    await supabase.from("room_answers").delete().eq("room_id", room.id);
+    await supabase.from("submissions").delete().eq("room_id", room.id);
+    await supabase.from("room_participants").delete().eq("room_id", room.id);
+    await supabase.from("rooms").delete().eq("id", room.id);
+  }, [room]);
+
   return {
     room,
     participants,
@@ -235,12 +249,14 @@ export function useQuizRoom(roomCode: string | null) {
     reactions,
     loading,
     error,
+    roomDeleted,
     startQuiz,
     nextQuestion,
     endQuiz,
     submitAnswer,
     sendReaction,
     leaveRoom,
+    deleteRoom,
     refetch: fetchRoom,
   };
 }
