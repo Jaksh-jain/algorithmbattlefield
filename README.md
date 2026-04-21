@@ -1,4 +1,4 @@
-# ⚔️ Algorithm Battlefield
+# 🎓 AlgoLearner
 
 A real-time MCQ Quiz Battle Platform designed for interactive learning, competitive coding practice, and classroom engagement.
 
@@ -6,7 +6,7 @@ A real-time MCQ Quiz Battle Platform designed for interactive learning, competit
 
 ## 🚀 Overview
 
-Algorithm Battlefield enables users to participate in live quiz battles with real-time synchronization, leaderboard tracking, and engaging UI.
+AlgoLearner enables users to participate in live quiz battles with real-time synchronization, leaderboard tracking, and engaging UI.
 
 Built for:
 - Students practicing DSA & CS concepts
