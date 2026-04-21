@@ -116,6 +116,7 @@ export type Database = {
         Row: {
           created_at: string
           current_question_index: number
+          host_session_id: string
           host_name: string
           id: string
           max_participants: number
@@ -135,6 +136,7 @@ export type Database = {
         Insert: {
           created_at?: string
           current_question_index?: number
+          host_session_id: string
           host_name: string
           id?: string
           max_participants?: number
@@ -154,6 +156,7 @@ export type Database = {
         Update: {
           created_at?: string
           current_question_index?: number
+          host_session_id?: string
           host_name?: string
           id?: string
           max_participants?: number

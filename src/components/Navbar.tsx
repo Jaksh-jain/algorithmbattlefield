@@ -17,12 +17,17 @@ export default function Navbar() {
   const { theme } = useTheme();
   const [open, setOpen] = useState(false);
   const logo = theme === "dark" ? logoDark : logoLight;
+  const inQuiz = location.pathname.startsWith("/quiz/");
 
   const isActive = (to: string) =>
     location.pathname === to || (to === "/" && location.pathname.startsWith("/quiz"));
 
   return (
-    <nav className="fixed top-0 left-0 right-0 z-50 glass-panel-strong rounded-none border-x-0 border-t-0">
+    <nav
+      className={`fixed top-0 left-0 right-0 z-50 glass-panel-strong rounded-none border-x-0 border-t-0 transition-all duration-300 ${
+        inQuiz ? "-translate-y-full opacity-0 pointer-events-none" : "translate-y-0 opacity-100"
+      }`}
+    >
       <div className="max-w-7xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between">
         <Link to="/" onClick={() => setOpen(false)} className="flex items-center">
           <img
@@ -67,33 +72,33 @@ export default function Navbar() {
             {open ? <X className="w-4 h-4" /> : <Menu className="w-4 h-4" />}
           </button>
         </div>
-      </div>
+        </div>
 
       {/* Mobile menu */}
-      {open && (
-        <div className="md:hidden border-t border-border/60 bg-card/95 backdrop-blur-xl">
-          <div className="max-w-7xl mx-auto px-4 py-3 flex flex-col gap-1">
-            {navItems.map((item) => {
-              const active = isActive(item.to);
-              return (
-                <Link
-                  key={item.to}
-                  to={item.to}
-                  onClick={() => setOpen(false)}
-                  className={`flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-all ${
-                    active
-                      ? "bg-primary/15 text-primary"
-                      : "text-muted-foreground hover:text-foreground hover:bg-muted/60"
-                  }`}
-                >
-                  <item.icon className="w-4 h-4" />
-                  <span>{item.label}</span>
-                </Link>
-              );
-            })}
+        {open && (
+          <div className="md:hidden border-t border-border/60 bg-card/95 backdrop-blur-xl">
+            <div className="max-w-7xl mx-auto px-4 py-3 flex flex-col gap-1">
+              {navItems.map((item) => {
+                const active = isActive(item.to);
+                return (
+                  <Link
+                    key={item.to}
+                    to={item.to}
+                    onClick={() => setOpen(false)}
+                    className={`flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-all ${
+                      active
+                        ? "bg-primary/15 text-primary"
+                        : "text-muted-foreground hover:text-foreground hover:bg-muted/60"
+                    }`}
+                  >
+                    <item.icon className="w-4 h-4" />
+                    <span>{item.label}</span>
+                  </Link>
+                );
+              })}
+            </div>
           </div>
-        </div>
-      )}
+        )}
     </nav>
   );
 }

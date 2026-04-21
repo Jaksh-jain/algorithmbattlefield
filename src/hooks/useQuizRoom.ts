@@ -1,7 +1,11 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { getSessionId } from "@/lib/session";
-import type { RealtimeChannel } from "@supabase/supabase-js";
+import type {
+  RealtimeChannel,
+  RealtimePostgresChangesPayload,
+  RealtimePresenceState,
+} from "@supabase/supabase-js";
 
 interface Participant {
   id: string;
@@ -16,6 +20,7 @@ interface RoomData {
   id: string;
   room_code: string;
   host_name: string;
+  host_session_id: string;
   topic: string;
   status: string;
   current_question_index: number;
@@ -25,6 +30,7 @@ interface RoomData {
   max_participants: number;
   quiz_mode: "mcq" | "program" | "mixed";
   time_per_question_sec: number;
+  question_count?: number;
   timer_paused_at: string | null;
   timer_pause_offset_ms: number;
 }
@@ -38,8 +44,44 @@ interface AnswerRecord {
 }
 
 interface Reaction {
+  id: string;
   user: string;
   emoji: string;
+  lane: number;
+  drift: number;
+  durationMs: number;
+}
+
+interface PresenceMeta {
+  user_id: string;
+  isHost: boolean;
+  status: "coding" | string;
+  online_at: string;
+}
+
+type RoomRow = RoomData;
+
+const REACTION_LANES = [8, 20, 32, 44, 56, 68, 80, 92];
+
+function randomId(): string {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID();
+  }
+  return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
+
+function buildReaction(emoji: string, user: string): Reaction {
+  const lane = REACTION_LANES[Math.floor(Math.random() * REACTION_LANES.length)];
+  const drift = Math.floor(Math.random() * 61) - 30; // -30..30 px
+  const durationMs = 1800 + Math.floor(Math.random() * 1200); // 1.8s..3s
+  return {
+    id: randomId(),
+    user,
+    emoji,
+    lane,
+    drift,
+    durationMs,
+  };
 }
 
 export function useQuizRoom(roomCode: string | null) {
@@ -48,10 +90,14 @@ export function useQuizRoom(roomCode: string | null) {
   const [myParticipant, setMyParticipant] = useState<Participant | null>(null);
   const [answers, setAnswers] = useState<AnswerRecord[]>([]);
   const [reactions, setReactions] = useState<Reaction[]>([]);
+  const [onlineUsers, setOnlineUsers] = useState<PresenceMeta[]>([]);
+  const [isPaused, setIsPaused] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [roomDeleted, setRoomDeleted] = useState(false);
   const channelRef = useRef<RealtimeChannel | null>(null);
+  const roomRef = useRef<RoomData | null>(null);
+  const myParticipantRef = useRef<Participant | null>(null);
   const sessionId = getSessionId();
 
   const fetchRoom = useCallback(async () => {
@@ -67,48 +113,106 @@ export function useQuizRoom(roomCode: string | null) {
       setLoading(false);
       return;
     }
-    setRoom(roomData as unknown as RoomData);
+    const nextRoom = roomData as unknown as RoomData;
+    setRoom(nextRoom);
+    roomRef.current = nextRoom;
+    setIsPaused(Boolean(nextRoom.timer_paused_at));
 
-    const { data: parts } = await supabase
+    const { data: parts, error: partsErr } = await supabase
       .from("room_participants")
       .select("*")
       .eq("room_id", roomData.id)
       .order("score", { ascending: false });
 
-    if (parts) {
+    if (partsErr) {
+      setError(partsErr.message);
+    } else if (parts) {
       setParticipants(parts);
-      setMyParticipant(parts.find((p) => p.session_id === sessionId) || null);
+      const mine = parts.find((p) => p.session_id === sessionId) || null;
+      setMyParticipant(mine);
+      myParticipantRef.current = mine;
     }
 
     // Fetch answers for this room
-    const { data: ans } = await supabase
+    const { data: ans, error: answersErr } = await supabase
       .from("room_answers")
       .select("*")
       .eq("room_id", roomData.id);
-    if (ans) setAnswers(ans as unknown as AnswerRecord[]);
+    if (answersErr) {
+      setError(answersErr.message);
+    } else if (ans) {
+      setAnswers(ans as unknown as AnswerRecord[]);
+    }
 
     setLoading(false);
   }, [roomCode, sessionId]);
 
   useEffect(() => {
+    roomRef.current = room;
+  }, [room]);
+
+  useEffect(() => {
+    myParticipantRef.current = myParticipant;
+  }, [myParticipant]);
+
+  useEffect(() => {
     if (!roomCode) return;
     fetchRoom();
 
+    const onRoomChange = (payload: RealtimePostgresChangesPayload<Record<string, unknown>>) => {
+      if (payload.eventType === "DELETE") {
+        setRoomDeleted(true);
+        setRoom(null);
+        roomRef.current = null;
+        setIsPaused(false);
+        return;
+      }
+
+      if (payload.eventType === "UPDATE" || payload.eventType === "INSERT") {
+        const nextRoom = payload.new as unknown as RoomData;
+        setRoom(nextRoom);
+        roomRef.current = nextRoom;
+        setIsPaused(Boolean(nextRoom.timer_paused_at));
+      }
+    };
+
     const channel = supabase
       .channel(`quiz-${roomCode}`)
+      .on("presence", { event: "sync" }, () => {
+        const state: RealtimePresenceState<PresenceMeta> = channel.presenceState<PresenceMeta>();
+        const flattened = Object.values(state).flatMap((presences) => presences);
+        setOnlineUsers(flattened);
+      })
+      .on("presence", { event: "leave" }, async ({ leftPresences }) => {
+        const hostLeft = leftPresences.some((presence) => presence.isHost === true);
+        if (!hostLeft) return;
+
+        const currentRoom = roomRef.current;
+        if (!currentRoom || currentRoom.timer_paused_at) return;
+
+        // Jitter helps avoid many clients writing the same pause update simultaneously.
+        const delayMs = Math.floor(Math.random() * 501);
+        await new Promise<void>((resolve) => {
+          window.setTimeout(() => resolve(), delayMs);
+        });
+
+        const latestRoom = roomRef.current;
+        if (!latestRoom || latestRoom.timer_paused_at) return;
+
+        const { error: pauseErr } = await supabase
+          .from("rooms")
+          .update({ timer_paused_at: new Date().toISOString() })
+          .eq("id", latestRoom.id)
+          .is("timer_paused_at", null);
+
+        if (pauseErr) {
+          setError(pauseErr.message);
+        }
+      })
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "rooms", filter: `room_code=eq.${roomCode}` },
-        (payload) => {
-          if (payload.eventType === "DELETE") {
-            setRoomDeleted(true);
-            setRoom(null);
-            return;
-          }
-          if (payload.eventType === "UPDATE" || payload.eventType === "INSERT") {
-            setRoom(payload.new as unknown as RoomData);
-          }
-        }
+        onRoomChange
       )
       .on(
         "postgres_changes",
@@ -132,9 +236,26 @@ export function useQuizRoom(roomCode: string | null) {
         }
       )
       .on("broadcast", { event: "reaction" }, (payload) => {
-        setReactions((prev) => [...prev.slice(-50), payload.payload as Reaction]);
+        const incoming = payload.payload as { user?: string; emoji?: string };
+        if (!incoming?.emoji) return;
+        const reaction = buildReaction(incoming.emoji, incoming.user || "anonymous");
+        setReactions((prev) => [...prev.slice(-80), reaction]);
       })
-      .subscribe();
+      .subscribe(async (status) => {
+        if (status === "SUBSCRIBED") {
+          const mine = myParticipantRef.current;
+          const trackPayload: PresenceMeta = {
+            user_id: mine?.id ?? sessionId,
+            isHost: Boolean(mine?.is_host),
+            status: "coding",
+            online_at: new Date().toISOString(),
+          };
+          const trackResult = await channel.track(trackPayload);
+          if (trackResult !== "ok") {
+            setError(`Presence track failed: ${trackResult}`);
+          }
+        }
+      });
 
     channelRef.current = channel;
     return () => {
@@ -221,23 +342,56 @@ export function useQuizRoom(roomCode: string | null) {
 
   const pauseTimer = useCallback(async () => {
     if (!room || room.timer_paused_at) return;
-    await supabase
+    const { error: pauseErr } = await supabase
       .from("rooms")
       .update({ timer_paused_at: new Date().toISOString() })
       .eq("id", room.id);
+    if (pauseErr) {
+      setError(pauseErr.message);
+    }
   }, [room]);
 
   const resumeTimer = useCallback(async () => {
     if (!room || !room.timer_paused_at) return;
     const pausedDuration = Date.now() - new Date(room.timer_paused_at).getTime();
-    await supabase
+    const { error: resumeErr } = await supabase
       .from("rooms")
       .update({
         timer_paused_at: null,
         timer_pause_offset_ms: room.timer_pause_offset_ms + pausedDuration,
       })
       .eq("id", room.id);
+    if (resumeErr) {
+      setError(resumeErr.message);
+    }
   }, [room]);
+
+  const resumeRoom = useCallback(async () => {
+    const currentRoom = roomRef.current;
+    const mine = myParticipantRef.current;
+    if (!currentRoom || !mine?.is_host || !currentRoom.timer_paused_at) return;
+
+    const pausedAtMs = new Date(currentRoom.timer_paused_at).getTime();
+    if (Number.isNaN(pausedAtMs)) {
+      setError("Invalid pause timestamp");
+      return;
+    }
+
+    const pausedDurationMs = Math.max(0, Date.now() - pausedAtMs);
+    const nextOffsetMs = (currentRoom.timer_pause_offset_ms ?? 0) + pausedDurationMs;
+
+    const { error: resumeErr } = await supabase
+      .from("rooms")
+      .update({
+        timer_paused_at: null,
+        timer_pause_offset_ms: nextOffsetMs,
+      })
+      .eq("id", currentRoom.id);
+
+    if (resumeErr) {
+      setError(resumeErr.message);
+    }
+  }, []);
 
   const endQuiz = useCallback(async () => {
     if (!room) return;
@@ -285,7 +439,7 @@ export function useQuizRoom(roomCode: string | null) {
         event: "reaction",
         payload: { user: userName, emoji },
       });
-      setReactions((prev) => [...prev.slice(-50), { user: userName, emoji }]);
+      setReactions((prev) => [...prev.slice(-80), buildReaction(emoji, userName)]);
     },
     []
   );
@@ -312,6 +466,8 @@ export function useQuizRoom(roomCode: string | null) {
     loading,
     error,
     roomDeleted,
+    onlineUsers,
+    isPaused,
     startQuiz,
     nextQuestion,
     previousQuestion,
@@ -319,6 +475,7 @@ export function useQuizRoom(roomCode: string | null) {
     resetTimer,
     pauseTimer,
     resumeTimer,
+    resumeRoom,
     endQuiz,
     submitAnswer,
     sendReaction,

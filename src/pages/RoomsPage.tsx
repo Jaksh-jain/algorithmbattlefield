@@ -3,7 +3,14 @@ import { motion, AnimatePresence } from "framer-motion";
 import { Users, Zap, Plus, ArrowRight, LogIn, Loader2, Lock, BookOpen, Timer, Layers, Trash2 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
-import { getSessionId, getUsername, setUsername, generateRoomCode } from "@/lib/session";
+import {
+  claimRoomOwnership,
+  getSessionId,
+  getUsername,
+  isClaimedRoomOwner,
+  setUsername,
+  generateRoomCode,
+} from "@/lib/session";
 import { useRoomsList } from "@/hooks/useRoomsList";
 import { TOPICS } from "@/lib/mcqQuestions";
 import { useToast } from "@/hooks/use-toast";
@@ -19,13 +26,14 @@ const MODES: Array<{ id: QuizMode; label: string; desc: string }> = [
   { id: "mixed", label: "Mixed", desc: "MCQ + Program" },
 ];
 const TIMER_OPTIONS = [30, 45, 60];
+const QUESTION_COUNT_OPTIONS = [5, 10, 15, 20];
 
 const sanitizeName = (s: string) => s.replace(/[<>"'`]/g, "").slice(0, 40).trim();
 
 export default function RoomsPage() {
   const navigate = useNavigate();
   const { toast } = useToast();
-  const { rooms, loading } = useRoomsList();
+  const { rooms, myHostedRoomIds, loading } = useRoomsList();
   const sessionId = getSessionId();
 
   const [showCreate, setShowCreate] = useState(false);
@@ -37,6 +45,7 @@ export default function RoomsPage() {
   const [roomPassword, setRoomPassword] = useState("");
   const [quizMode, setQuizMode] = useState<QuizMode>("mcq");
   const [timePerQ, setTimePerQ] = useState<number>(60);
+  const [questionCount, setQuestionCount] = useState<number>(10);
 
   const [busy, setBusy] = useState(false);
   const [joinError, setJoinError] = useState("");
@@ -52,23 +61,55 @@ export default function RoomsPage() {
     setUsername(cleanName);
     const code = generateRoomCode();
 
-    const { data: room, error: roomErr } = await supabase
+    const baseInsert = {
+      room_code: code,
+      host_name: cleanName,
+      problem_id: 1,
+      topic: selectedTopic,
+      room_password: roomPassword.trim(),
+      quiz_mode: quizMode,
+      time_per_question_sec: timePerQ,
+      question_count: questionCount,
+      max_participants: MAX_PARTICIPANTS,
+    };
+
+    let room: { id: string } | null = null;
+    let roomErr: { message: string } | null = null;
+
+    const firstAttempt = await supabase
       .from("rooms")
       .insert({
-        room_code: code,
-        host_name: cleanName,
-        problem_id: 1,
-        topic: selectedTopic,
-        room_password: roomPassword.trim(),
-        quiz_mode: quizMode,
-        time_per_question_sec: timePerQ,
-        max_participants: MAX_PARTICIPANTS,
+        ...baseInsert,
+        host_session_id: sessionId,
       } as never)
       .select()
       .single();
 
+    room = firstAttempt.data as { id: string } | null;
+    roomErr = firstAttempt.error ? { message: firstAttempt.error.message } : null;
+
+    // Backward-compatible fallback if DB migration has not been applied yet.
+    if (roomErr?.message.includes("host_session_id") || roomErr?.message.includes("question_count")) {
+      const fallbackAttempt = await supabase
+        .from("rooms")
+        .insert({
+          room_code: code,
+          host_name: cleanName,
+          problem_id: 1,
+          topic: selectedTopic,
+          room_password: roomPassword.trim(),
+          quiz_mode: quizMode,
+          time_per_question_sec: timePerQ,
+          max_participants: MAX_PARTICIPANTS,
+        } as never)
+        .select()
+        .single();
+      room = fallbackAttempt.data as { id: string } | null;
+      roomErr = fallbackAttempt.error ? { message: fallbackAttempt.error.message } : null;
+    }
+
     if (roomErr || !room) {
-      setCreateError("Failed to create room");
+      setCreateError(roomErr?.message || "Failed to create room");
       setBusy(false);
       return;
     }
@@ -79,6 +120,7 @@ export default function RoomsPage() {
       session_id: sessionId,
       is_host: true,
     });
+    claimRoomOwnership(code, sessionId);
 
     setBusy(false);
     setShowCreate(false);
@@ -120,9 +162,14 @@ export default function RoomsPage() {
       .select("*", { count: "exact", head: true })
       .eq("room_id", room.id);
 
+    const hostSessionId = (room as { host_session_id?: string | null }).host_session_id;
+    const shouldBeHost =
+      (typeof hostSessionId === "string" && hostSessionId === sessionId) ||
+      isClaimedRoomOwner(code, sessionId);
+
     const { data: existing } = await supabase
       .from("room_participants")
-      .select("id")
+      .select("id, is_host")
       .eq("room_id", room.id)
       .eq("session_id", sessionId)
       .maybeSingle();
@@ -138,7 +185,14 @@ export default function RoomsPage() {
         room_id: room.id,
         user_name: cleanName,
         session_id: sessionId,
+        is_host: shouldBeHost,
       });
+    } else if (shouldBeHost && !existing.is_host) {
+      // If the room creator rejoins, restore host privileges on their participant row.
+      await supabase
+        .from("room_participants")
+        .update({ is_host: true, user_name: cleanName })
+        .eq("id", existing.id);
     }
 
     setBusy(false);
@@ -162,6 +216,100 @@ export default function RoomsPage() {
     toast({ title: "Room deleted", description: `Room ${deleteModal.roomCode} has been removed.` });
     setDeleteModal({ open: false });
   };
+
+  const currentRooms = rooms.filter((room) => room.status === "waiting" || room.status === "active");
+  const completedRooms = rooms.filter((room) => room.status === "finished" || room.status === "cancelled");
+
+  const renderRoomGrid = (list: typeof rooms, showJoin: boolean) => (
+    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+      <AnimatePresence>
+        {list.map((room, i) => {
+          const roomData = room as { topic?: string; max_participants?: number };
+          const topicConfig = TOPICS.find((t) => t.id === roomData.topic);
+          const cap = roomData.max_participants ?? MAX_PARTICIPANTS;
+          const isFull = room.participant_count >= cap;
+          const isMine = myHostedRoomIds.includes(room.id) || isClaimedRoomOwner(room.room_code, sessionId);
+          return (
+            <motion.div
+              key={room.id}
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              transition={{ delay: i * 0.04 }}
+              className="glass-panel p-5 hover:border-primary/30 transition-all duration-300 group"
+            >
+              <div className="flex items-start justify-between mb-3">
+                <div className="flex items-center gap-2">
+                  {room.status === "active" && (
+                    <span className="w-2 h-2 rounded-full bg-neon-cyan animate-pulse-glow" />
+                  )}
+                  <span className="text-lg">{topicConfig?.icon || "📚"}</span>
+                  <span className="text-xs text-muted-foreground uppercase tracking-wider">
+                    {topicConfig?.label || "General"}
+                  </span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${
+                    room.status === "active" ? "bg-neon-cyan/15 text-neon-cyan" :
+                    room.status === "finished" ? "bg-muted/50 text-muted-foreground" :
+                    room.status === "cancelled" ? "bg-destructive/15 text-destructive" :
+                    "bg-primary/15 text-primary"
+                  }`}>
+                    {room.status}
+                  </span>
+                  {isMine && (
+                    <button
+                      onClick={(e) => { e.stopPropagation(); setDeleteModal({ open: true, roomId: room.id, roomCode: room.room_code }); }}
+                      className="p-1 rounded-md text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors"
+                      aria-label="Delete room"
+                      title="Delete room"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                </div>
+              </div>
+              <h3 className="text-lg font-display font-semibold text-foreground mb-1">
+                {topicConfig?.label || "Quiz"} Battle
+              </h3>
+              <p className="text-xs text-muted-foreground mb-3">
+                Host: <span className="text-foreground">{room.host_name}</span>
+                <span className="ml-2 font-mono text-primary">{room.room_code}</span>
+              </p>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <Users className="w-4 h-4" />
+                  <span className={isFull ? "text-destructive font-semibold" : ""}>
+                    {room.participant_count} / {cap}
+                  </span>
+                  {isFull && <span className="text-xs text-destructive">FULL</span>}
+                </div>
+                {showJoin ? (
+                  <button
+                    onClick={() => !isFull && openJoinModal(room.room_code)}
+                    disabled={isFull}
+                    className="flex items-center gap-1 text-primary opacity-70 group-hover:opacity-100 transition-opacity disabled:opacity-30 disabled:cursor-not-allowed hover:underline"
+                  >
+                    <Zap className="w-4 h-4" />
+                    <span className="text-sm font-semibold">{isFull ? "Full" : "Join"}</span>
+                    {!isFull && <ArrowRight className="w-3 h-3" />}
+                  </button>
+                ) : (
+                  <span className="text-xs text-muted-foreground">Archived</span>
+                )}
+              </div>
+              <div className="mt-3 h-1 rounded-full bg-muted overflow-hidden">
+                <div
+                  className={`h-full rounded-full transition-all ${isFull ? "bg-destructive" : "bg-gradient-to-r from-primary to-secondary"}`}
+                  style={{ width: `${Math.min(100, (room.participant_count / cap) * 100)}%` }}
+                />
+              </div>
+            </motion.div>
+          );
+        })}
+      </AnimatePresence>
+    </div>
+  );
 
   return (
     <div className="min-h-screen pt-24 px-4 pb-8 relative z-10">
@@ -261,6 +409,27 @@ export default function RoomsPage() {
                   </div>
                 </div>
 
+                <div>
+                  <label className="text-xs text-muted-foreground mb-1.5 block">
+                    Number of questions
+                  </label>
+                  <div className="grid grid-cols-4 gap-2">
+                    {QUESTION_COUNT_OPTIONS.map((n) => (
+                      <button
+                        key={n}
+                        onClick={() => setQuestionCount(n)}
+                        className={`p-2 rounded-lg text-sm font-mono font-semibold transition-all ${
+                          questionCount === n
+                            ? "bg-primary/15 text-primary border border-primary/40"
+                            : "bg-muted/30 text-muted-foreground hover:bg-muted/50 border border-transparent"
+                        }`}
+                      >
+                        {n}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
                 <div className="relative">
                   <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                   <input
@@ -297,89 +466,34 @@ export default function RoomsPage() {
             <p className="text-sm mt-1">Create one to get started!</p>
           </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            <AnimatePresence>
-              {rooms.map((room, i) => {
-                const roomData = room as { topic?: string; max_participants?: number };
-                const topicConfig = TOPICS.find((t) => t.id === roomData.topic);
-                const cap = roomData.max_participants ?? MAX_PARTICIPANTS;
-                const isFull = room.participant_count >= cap;
-                const isMine = (room as { host_name: string }).host_name && room.host_name === (getUsername() || "");
-                // Host detection by session: check participant rows is async; we approximate via name match.
-                return (
-                  <motion.div
-                    key={room.id}
-                    initial={{ opacity: 0, y: 20 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, scale: 0.95 }}
-                    transition={{ delay: i * 0.04 }}
-                    className="glass-panel p-5 hover:border-primary/30 transition-all duration-300 group"
-                  >
-                    <div className="flex items-start justify-between mb-3">
-                      <div className="flex items-center gap-2">
-                        {room.status === "active" && (
-                          <span className="w-2 h-2 rounded-full bg-neon-cyan animate-pulse-glow" />
-                        )}
-                        <span className="text-lg">{topicConfig?.icon || "📚"}</span>
-                        <span className="text-xs text-muted-foreground uppercase tracking-wider">
-                          {topicConfig?.label || "General"}
-                        </span>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${
-                          room.status === "active" ? "bg-neon-cyan/15 text-neon-cyan" :
-                          room.status === "finished" ? "bg-muted/50 text-muted-foreground" :
-                          "bg-primary/15 text-primary"
-                        }`}>
-                          {room.status}
-                        </span>
-                        {isMine && (
-                          <button
-                            onClick={(e) => { e.stopPropagation(); setDeleteModal({ open: true, roomId: room.id, roomCode: room.room_code }); }}
-                            className="p-1 rounded-md text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors"
-                            aria-label="Delete room"
-                            title="Delete room"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                    <h3 className="text-lg font-display font-semibold text-foreground mb-1">
-                      {topicConfig?.label || "Quiz"} Battle
-                    </h3>
-                    <p className="text-xs text-muted-foreground mb-3">
-                      Host: <span className="text-foreground">{room.host_name}</span>
-                      <span className="ml-2 font-mono text-primary">{room.room_code}</span>
-                    </p>
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                        <Users className="w-4 h-4" />
-                        <span className={isFull ? "text-destructive font-semibold" : ""}>
-                          {room.participant_count} / {cap}
-                        </span>
-                        {isFull && <span className="text-xs text-destructive">FULL</span>}
-                      </div>
-                      <button
-                        onClick={() => !isFull && openJoinModal(room.room_code)}
-                        disabled={isFull}
-                        className="flex items-center gap-1 text-primary opacity-70 group-hover:opacity-100 transition-opacity disabled:opacity-30 disabled:cursor-not-allowed hover:underline"
-                      >
-                        <Zap className="w-4 h-4" />
-                        <span className="text-sm font-semibold">{isFull ? "Full" : "Join"}</span>
-                        {!isFull && <ArrowRight className="w-3 h-3" />}
-                      </button>
-                    </div>
-                    <div className="mt-3 h-1 rounded-full bg-muted overflow-hidden">
-                      <div
-                        className={`h-full rounded-full transition-all ${isFull ? "bg-destructive" : "bg-gradient-to-r from-primary to-secondary"}`}
-                        style={{ width: `${Math.min(100, (room.participant_count / cap) * 100)}%` }}
-                      />
-                    </div>
-                  </motion.div>
-                );
-              })}
-            </AnimatePresence>
+          <div className="space-y-8">
+            <section>
+              <div className="flex items-center justify-between mb-3">
+                <h2 className="text-xl font-display font-semibold text-foreground">Current Quizzes</h2>
+                <span className="text-xs text-muted-foreground">{currentRooms.length} rooms</span>
+              </div>
+              {currentRooms.length === 0 ? (
+                <div className="glass-panel p-6 text-sm text-muted-foreground">
+                  No current rooms right now.
+                </div>
+              ) : (
+                renderRoomGrid(currentRooms, true)
+              )}
+            </section>
+
+            <section>
+              <div className="flex items-center justify-between mb-3">
+                <h2 className="text-xl font-display font-semibold text-foreground">Completed Quizzes</h2>
+                <span className="text-xs text-muted-foreground">{completedRooms.length} rooms</span>
+              </div>
+              {completedRooms.length === 0 ? (
+                <div className="glass-panel p-6 text-sm text-muted-foreground">
+                  No completed rooms yet.
+                </div>
+              ) : (
+                renderRoomGrid(completedRooms, false)
+              )}
+            </section>
           </div>
         )}
       </div>

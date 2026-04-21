@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -30,7 +30,7 @@ export default function QuizBattlePage() {
     room, participants, myParticipant, answers, reactions,
     loading, error, roomDeleted,
     startQuiz, nextQuestion, previousQuestion, endQuiz,
-    adjustTime, resetTimer, pauseTimer, resumeTimer,
+    adjustTime, resetTimer, pauseTimer, resumeTimer, resumeRoom, isPaused,
     submitAnswer, sendReaction, leaveRoom, deleteRoom,
   } = useQuizRoom(roomCode || null);
 
@@ -39,10 +39,16 @@ export default function QuizBattlePage() {
   const topic = useMemo(() => getTopicByIdOrDefault(room?.topic || "dsa"), [room?.topic]);
   const quizMode: QuizMode = (room?.quiz_mode as QuizMode) || "mcq";
   const QUESTION_TIME_LIMIT = room?.time_per_question_sec ?? 60;
+  const QUESTION_COUNT = room?.question_count ?? 10;
 
   const questionList: AnyQuestion[] = useMemo(
-    () => buildQuestionList(room?.topic || "dsa", quizMode),
-    [room?.topic, quizMode]
+    () =>
+      buildQuestionList(room?.topic || "dsa", quizMode, {
+        // Stable per-room seed => same order for everyone in the room, different between rooms.
+        seed: room?.id || room?.room_code || "fallback-seed",
+        count: QUESTION_COUNT,
+      }),
+    [room?.topic, quizMode, room?.id, room?.room_code, QUESTION_COUNT]
   );
   const totalQuestions = questionList.length;
   const currentEntry: AnyQuestion | null =
@@ -54,9 +60,13 @@ export default function QuizBattlePage() {
   const [programSelections, setProgramSelections] = useState<Record<number, number>>({});
   const [submitted, setSubmitted] = useState(false);
   const [timeLeft, setTimeLeft] = useState(QUESTION_TIME_LIMIT);
+  const [timeAdjustmentSec, setTimeAdjustmentSec] = useState(0);
   const [showReveal, setShowReveal] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [showLeaveConfirm, setShowLeaveConfirm] = useState(false);
+  const [leaveBusy, setLeaveBusy] = useState(false);
   const [deleteBusy, setDeleteBusy] = useState(false);
+  const adjustmentBaselineRef = useRef<{ questionIndex: number; startedAtMs: number } | null>(null);
 
   // Redirect when room is deleted
   useEffect(() => {
@@ -76,7 +86,34 @@ export default function QuizBattlePage() {
     setSubmitted(false);
     setShowReveal(false);
     setTimeLeft(QUESTION_TIME_LIMIT);
+    setTimeAdjustmentSec(0);
+    adjustmentBaselineRef.current = null;
   }, [questionIndex, QUESTION_TIME_LIMIT]);
+
+  // Track host timer edits (+/- seconds) and expose a visible indicator beside the base limit.
+  useEffect(() => {
+    if (!room?.question_started_at) return;
+    const startedAtMs = new Date(room.question_started_at).getTime();
+    if (Number.isNaN(startedAtMs)) return;
+
+    const baseline = adjustmentBaselineRef.current;
+    if (!baseline || baseline.questionIndex !== questionIndex) {
+      adjustmentBaselineRef.current = { questionIndex, startedAtMs };
+      setTimeAdjustmentSec(0);
+      return;
+    }
+
+    const rawDeltaSec = Math.round((startedAtMs - baseline.startedAtMs) / 1000);
+
+    // Large shifts are usually a timer reset/new sync point, not a +10/-10 adjustment.
+    if (Math.abs(rawDeltaSec) > QUESTION_TIME_LIMIT) {
+      adjustmentBaselineRef.current = { questionIndex, startedAtMs };
+      setTimeAdjustmentSec(0);
+      return;
+    }
+
+    setTimeAdjustmentSec(rawDeltaSec);
+  }, [room?.question_started_at, questionIndex, QUESTION_TIME_LIMIT]);
 
   // Check if already answered (restore submitted state on reload / refetch)
   useEffect(() => {
@@ -99,7 +136,6 @@ export default function QuizBattlePage() {
   }, [answers, myParticipant, questionIndex]);
 
   // Timer — synced via room.question_started_at + pause state. NEVER auto-advances.
-  const isPaused = !!room?.timer_paused_at;
   useEffect(() => {
     if (!room?.quiz_started || room?.status !== "active" || !room?.question_started_at) return;
     const startedAt = new Date(room.question_started_at).getTime();
@@ -171,7 +207,10 @@ export default function QuizBattlePage() {
   };
 
   const handleLeave = async () => {
+    setLeaveBusy(true);
     await leaveRoom();
+    setLeaveBusy(false);
+    setShowLeaveConfirm(false);
     navigate("/");
   };
 
@@ -343,16 +382,106 @@ export default function QuizBattlePage() {
 
   return (
     <div className="min-h-screen pt-20 px-2 pb-4 relative z-10">
+      <button
+        onClick={() => setShowLeaveConfirm(true)}
+        className="fixed top-4 right-4 z-[110] px-3 py-2 rounded-lg bg-destructive/15 text-destructive hover:bg-destructive/25 transition-colors text-sm font-semibold"
+      >
+        Leave Quiz
+      </button>
+
+      <AnimatePresence>
+        {showLeaveConfirm && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[130] bg-background/80 backdrop-blur-sm flex items-center justify-center p-4"
+          >
+            <motion.div
+              initial={{ scale: 0.96, y: 10, opacity: 0 }}
+              animate={{ scale: 1, y: 0, opacity: 1 }}
+              exit={{ scale: 0.96, y: 10, opacity: 0 }}
+              className="w-full max-w-md rounded-2xl border border-primary/25 glass-panel-strong p-6 text-center"
+            >
+              <h3 className="text-xl font-display font-bold text-foreground mb-2">
+                Leave Quiz?
+              </h3>
+              <p className="text-sm text-muted-foreground mb-6">
+                You are about to leave this quiz room. Are you sure you want to continue?
+              </p>
+              <div className="flex items-center justify-center gap-3">
+                <button
+                  onClick={() => setShowLeaveConfirm(false)}
+                  disabled={leaveBusy}
+                  className="px-4 py-2 rounded-lg bg-muted/40 text-foreground hover:bg-muted/60 transition-colors font-medium disabled:opacity-50"
+                >
+                  Continue Quiz
+                </button>
+                <button
+                  onClick={handleLeave}
+                  disabled={leaveBusy}
+                  className="px-4 py-2 rounded-lg bg-destructive/20 text-destructive hover:bg-destructive/30 transition-colors font-semibold disabled:opacity-50"
+                >
+                  {leaveBusy ? "Leaving..." : "Leave Quiz"}
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {isPaused && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[120] bg-background/85 backdrop-blur-sm flex items-center justify-center p-4"
+          >
+            <motion.div
+              initial={{ scale: 0.96, y: 12, opacity: 0 }}
+              animate={{ scale: 1, y: 0, opacity: 1 }}
+              exit={{ scale: 0.96, y: 12, opacity: 0 }}
+              transition={{ type: "spring", stiffness: 220, damping: 24 }}
+              className="w-full max-w-xl rounded-2xl border border-primary/25 glass-panel-strong p-8 text-center"
+            >
+              <h2 className="text-2xl font-display font-bold text-foreground mb-3">
+                Battle Paused
+              </h2>
+              {isHost ? (
+                <>
+                  <p className="text-muted-foreground mb-6">
+                    Your connection was interrupted. Resume when you are ready.
+                  </p>
+                  <button
+                    onClick={resumeRoom}
+                    className="inline-flex items-center gap-2 px-6 py-3 rounded-xl bg-primary/20 text-primary hover:bg-primary/30 transition-colors font-semibold"
+                  >
+                    <Play className="w-4 h-4" />
+                    Resume Battle
+                  </button>
+                </>
+              ) : (
+                <p className="text-muted-foreground">
+                  Connection to Host lost. Game paused. Waiting for Host to reconnect...
+                </p>
+              )}
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* Floating reactions */}
       <AnimatePresence>
-        {reactions.slice(-10).map((r, i) => (
+        {reactions.slice(-18).map((r) => (
           <motion.span
-            key={`${i}-${r.emoji}`}
-            initial={{ opacity: 1, y: 0, x: Math.random() * 200 + 100 }}
-            animate={{ opacity: 0, y: -200 }}
+            key={r.id}
+            initial={{ opacity: 0, y: 0, x: 0, scale: 0.6 }}
+            animate={{ opacity: [0, 1, 1, 0], y: -260, x: r.drift, scale: [0.6, 1, 1.05, 0.95] }}
             exit={{ opacity: 0 }}
-            transition={{ duration: 2 }}
-            className="fixed bottom-20 text-3xl pointer-events-none z-50"
+            transition={{ duration: r.durationMs / 1000, ease: "easeOut" }}
+            className="fixed bottom-20 text-3xl pointer-events-none z-50 select-none"
+            style={{ left: `${r.lane}%` }}
           >
             {r.emoji}
           </motion.span>
@@ -405,7 +534,13 @@ export default function QuizBattlePage() {
                 </span>
               )}
               <span className="text-[10px] text-muted-foreground flex items-center gap-1">
-                <Timer className="w-3 h-3" /> {QUESTION_TIME_LIMIT}s
+                <Timer className="w-3 h-3" />
+                {QUESTION_TIME_LIMIT}s
+                {timeAdjustmentSec !== 0 && (
+                  <span className={timeAdjustmentSec > 0 ? "text-neon-cyan" : "text-neon-orange"}>
+                    ({timeAdjustmentSec > 0 ? `+${timeAdjustmentSec}` : timeAdjustmentSec}s)
+                  </span>
+                )}
               </span>
             </div>
             <div className="h-1.5 rounded-full bg-muted overflow-hidden">
