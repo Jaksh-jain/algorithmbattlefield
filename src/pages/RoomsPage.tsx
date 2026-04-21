@@ -174,7 +174,7 @@ export default function RoomsPage() {
       .eq("session_id", sessionId)
       .maybeSingle();
 
-    if (!existing && (count || 0) >= (room.max_participants ?? MAX_PARTICIPANTS)) {
+    if (!existing && !shouldBeHost && (count || 0) >= (room.max_participants ?? MAX_PARTICIPANTS)) {
       setJoinError("Room is full");
       setBusy(false);
       return;
@@ -286,13 +286,13 @@ export default function RoomsPage() {
                 </div>
                 {showJoin ? (
                   <button
-                    onClick={() => !isFull && openJoinModal(room.room_code)}
-                    disabled={isFull}
+                    onClick={() => (!isFull || isMine) && openJoinModal(room.room_code)}
+                    disabled={isFull && !isMine}
                     className="flex items-center gap-1 text-primary opacity-70 group-hover:opacity-100 transition-opacity disabled:opacity-30 disabled:cursor-not-allowed hover:underline"
                   >
                     <Zap className="w-4 h-4" />
-                    <span className="text-sm font-semibold">{isFull ? "Full" : "Join"}</span>
-                    {!isFull && <ArrowRight className="w-3 h-3" />}
+                    <span className="text-sm font-semibold">{isMine ? "Rejoin as Host" : isFull ? "Full" : "Join"}</span>
+                    {(!isFull || isMine) && <ArrowRight className="w-3 h-3" />}
                   </button>
                 ) : (
                   <span className="text-xs text-muted-foreground">Archived</span>

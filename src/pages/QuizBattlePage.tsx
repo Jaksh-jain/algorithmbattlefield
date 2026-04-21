@@ -324,56 +324,7 @@ export default function QuizBattlePage() {
     );
   }
 
-  // FINISHED
-  if (room.status === "finished") {
-    return (
-      <div className="min-h-screen pt-20 px-4 pb-8 relative z-10">
-        <div className="max-w-2xl mx-auto">
-          <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="glass-panel-strong p-8">
-            <h2 className="text-2xl font-display font-bold text-center text-foreground mb-6">
-              🏆 Quiz Complete!
-            </h2>
-            <div className="space-y-3">
-              {leaderboard.map((p, i) => {
-                const badge = rankBadge(i + 1);
-                const correctCount = answers.filter((a) => a.participant_id === p.id && a.is_correct).length;
-                const tag = correctCount >= totalQuestions * 0.9 ? "Excellent" : correctCount >= totalQuestions * 0.7 ? "Great" : correctCount >= totalQuestions * 0.5 ? "Good" : "Needs Improvement";
-                const isMe = p.session_id === sessionId;
-                return (
-                  <motion.div
-                    key={p.id}
-                    initial={{ opacity: 0, x: -20 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    transition={{ delay: i * 0.1 }}
-                    className={`flex items-center justify-between p-4 rounded-xl ${badge.bg} ${isMe ? "border border-primary/30" : ""}`}
-                  >
-                    <div className="flex items-center gap-3">
-                      <span className={`text-lg font-display font-bold ${badge.color}`}>#{i + 1}</span>
-                      <badge.icon className={`w-5 h-5 ${badge.color}`} />
-                      <div>
-                        <span className="font-semibold text-foreground">{p.user_name}</span>
-                        <span className="text-xs text-muted-foreground ml-2">{badge.label}</span>
-                      </div>
-                    </div>
-                    <div className="text-right">
-                      <span className="font-mono font-bold text-primary">{p.score}</span>
-                      <span className="text-xs text-muted-foreground ml-2">{correctCount}/{totalQuestions}</span>
-                      <span className={`block text-xs mt-0.5 ${tag === "Excellent" ? "text-neon-cyan" : tag === "Great" ? "text-primary" : tag === "Good" ? "text-neon-orange" : "text-destructive"}`}>
-                        {tag}
-                      </span>
-                    </div>
-                  </motion.div>
-                );
-              })}
-            </div>
-            <button onClick={() => navigate("/")} className="mt-6 w-full py-3 rounded-xl bg-primary/15 text-primary hover:bg-primary/25 transition-colors font-semibold">
-              Back to Rooms
-            </button>
-          </motion.div>
-        </div>
-      </div>
-    );
-  }
+
 
   // ACTIVE QUIZ
   const progress = ((questionIndex + 1) / totalQuestions) * 100;
@@ -384,7 +335,7 @@ export default function QuizBattlePage() {
     <div className="min-h-screen pt-20 px-2 pb-4 relative z-10">
       <button
         onClick={() => setShowLeaveConfirm(true)}
-        className="fixed top-4 right-4 z-[110] px-3 py-2 rounded-lg bg-destructive/15 text-destructive hover:bg-destructive/25 transition-colors text-sm font-semibold"
+        className="absolute top-4 right-4 z-[110] px-3 py-2 rounded-lg bg-destructive/15 text-destructive hover:bg-destructive/25 transition-colors text-sm font-semibold"
       >
         Leave Quiz
       </button>
@@ -488,9 +439,18 @@ export default function QuizBattlePage() {
         ))}
       </AnimatePresence>
 
-      <div className="max-w-[1400px] mx-auto grid grid-cols-1 lg:grid-cols-12 gap-3 h-[calc(100vh-6rem)]">
+      <motion.div layout className="max-w-[1400px] mx-auto grid grid-cols-1 lg:grid-cols-12 gap-3 h-[calc(100vh-6rem)]">
         {/* Main Question Area */}
-        <div className="lg:col-span-8 flex flex-col gap-3">
+        <AnimatePresence mode="popLayout">
+          {room.status !== "finished" && (
+            <motion.div
+              layout
+              initial={{ opacity: 0, x: -20 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: -50, filter: "blur(4px)" }}
+              transition={{ duration: 0.4, ease: "easeInOut" }}
+              className="lg:col-span-8 flex flex-col gap-3"
+            >
           {/* Top Bar */}
           <div className="glass-panel p-3 flex items-center justify-between">
             <div className="flex items-center gap-3">
@@ -790,15 +750,27 @@ export default function QuizBattlePage() {
               </div>
             </div>
           )}
-        </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
 
         {/* Right: Leaderboard */}
-        <div className="lg:col-span-4 flex flex-col gap-3">
-          <div className="glass-panel-strong p-4 flex-1 overflow-y-auto scrollbar-hide">
-            <div className="flex items-center gap-2 mb-4">
-              <Trophy className="w-5 h-5 text-neon-orange" />
-              <span className="font-display font-bold text-foreground">Leaderboard</span>
-            </div>
+        <motion.div
+          layout
+          transition={{ duration: 0.5, ease: [0.25, 1, 0.5, 1] }}
+          className={`${room.status === "finished" ? "lg:col-span-12" : "lg:col-span-4"} flex flex-col gap-3`}
+        >
+          <motion.div layout className="glass-panel-strong p-4 flex-1 overflow-y-auto scrollbar-hide">
+            {room.status === "finished" ? (
+              <motion.h2 layout className="text-3xl font-display font-bold text-center text-foreground mb-6 mt-4">
+                🏆 Quiz Complete!
+              </motion.h2>
+            ) : (
+              <motion.div layout className="flex items-center gap-2 mb-4">
+                <Trophy className="w-5 h-5 text-neon-orange" />
+                <span className="font-display font-bold text-foreground">Leaderboard</span>
+              </motion.div>
+            )}
 
             {/* Top 3 podium */}
             {leaderboard.length >= 3 && (
@@ -833,32 +805,68 @@ export default function QuizBattlePage() {
                 const badge = rankBadge(i + 1);
                 const isMe = p.session_id === sessionId;
                 const correctCount = answers.filter((a) => a.participant_id === p.id && a.is_correct).length;
+                const tag = correctCount >= totalQuestions * 0.9 ? "Excellent" : correctCount >= totalQuestions * 0.7 ? "Great" : correctCount >= totalQuestions * 0.5 ? "Good" : "Needs Improvement";
                 return (
                   <motion.div
                     key={p.id}
                     layout
-                    className={`flex items-center justify-between p-2.5 rounded-lg transition-all ${
+                    className={`flex items-center justify-between transition-all ${
                       isMe ? "bg-primary/10 border border-primary/20" : "hover:bg-muted/20"
-                    }`}
+                    } ${room.status === "finished" ? badge.bg + " p-4 rounded-xl" : "p-2.5 rounded-lg"}`}
                   >
-                    <div className="flex items-center gap-2">
-                      <span className={`text-xs font-mono font-bold w-6 ${badge.color}`}>#{i + 1}</span>
-                      <span className="text-sm text-foreground truncate max-w-[120px]">{p.user_name}</span>
-                      {p.is_host && <Crown className="w-3 h-3 text-neon-orange" />}
+                    <div className="flex items-center gap-3">
+                      {room.status === "finished" ? (
+                        <>
+                          <span className={`text-lg font-display font-bold ${badge.color}`}>#{i + 1}</span>
+                          <badge.icon className={`w-5 h-5 ${badge.color}`} />
+                        </>
+                      ) : (
+                        <span className={`text-xs font-mono font-bold w-6 ${badge.color}`}>#{i + 1}</span>
+                      )}
+                      <div>
+                        <span className={`font-semibold text-foreground truncate max-w-[120px] md:max-w-[200px] ${room.status === "finished" ? "text-base" : "text-sm"}`}>{p.user_name}</span>
+                        {p.is_host && room.status !== "finished" && <Crown className="w-3 h-3 text-neon-orange inline ml-1" />}
+                        {room.status === "finished" && <span className="text-xs text-muted-foreground ml-2 block sm:inline">{badge.label}</span>}
+                      </div>
                     </div>
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs text-muted-foreground">{correctCount}✓</span>
-                      <span className="text-sm font-mono font-bold text-primary">{p.score}</span>
+                    <div className={room.status === "finished" ? "text-right" : "flex items-center gap-2"}>
+                      {room.status === "finished" ? (
+                        <>
+                          <span className="font-mono font-bold text-primary text-lg">{p.score}</span>
+                          <span className="text-xs text-muted-foreground ml-2">{correctCount}/{totalQuestions}</span>
+                          <span className={`block text-xs mt-0.5 ${tag === "Excellent" ? "text-neon-cyan" : tag === "Great" ? "text-primary" : tag === "Good" ? "text-neon-orange" : "text-destructive"}`}>
+                            {tag}
+                          </span>
+                        </>
+                      ) : (
+                        <>
+                          <span className="text-xs text-muted-foreground">{correctCount}✓</span>
+                          <span className="text-sm font-mono font-bold text-primary">{p.score}</span>
+                        </>
+                      )}
                     </div>
                   </motion.div>
                 );
               })}
             </div>
-          </div>
+            {room.status === "finished" && (
+              <motion.button
+                layout
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.5 }}
+                onClick={() => navigate("/")}
+                className="mt-6 w-full py-3 rounded-xl bg-primary/15 text-primary hover:bg-primary/25 transition-colors font-semibold"
+              >
+                Back to Rooms
+              </motion.button>
+            )}
+          </motion.div>
 
           {/* Participants */}
-          <div className="glass-panel p-4 max-h-48 overflow-y-auto scrollbar-hide">
-            <div className="flex items-center gap-2 mb-2">
+          {room.status !== "finished" && (
+            <motion.div layout className="glass-panel p-4 max-h-48 overflow-y-auto scrollbar-hide">
+              <div className="flex items-center gap-2 mb-2">
               <Users className="w-4 h-4 text-muted-foreground" />
               <span className="text-sm font-semibold text-foreground">Participants ({participants.length})</span>
             </div>
@@ -874,10 +882,11 @@ export default function QuizBattlePage() {
                   </span>
                 );
               })}
-            </div>
-          </div>
-        </div>
-      </div>
+              </div>
+            </motion.div>
+          )}
+        </motion.div>
+      </motion.div>
     </div>
   );
 }
