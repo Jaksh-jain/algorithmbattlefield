@@ -86,11 +86,12 @@ void deleteHead(Node** head) {
   delete temp;
 }`,
   "Stack": `// Edit initial data here:
+int MAX_CAPACITY = 10;
 int data[] = {5, 12, 8};
 int push_val = 15;
 
 void push(int val) {
-  if (top >= MAX-1) return;
+  if (top >= MAX_CAPACITY-1) return;
   stack[++top] = val;
 }
 
@@ -100,11 +101,12 @@ int pop() {
 }
 `,
   "Queue": `
+int MAX_CAPACITY = 10;
 int data[] = {10, 20, 30};
 int enqueue_val = 40;
 
 void enqueue(int val) {
-  if (rear == MAX-1) return;
+  if (rear == MAX_CAPACITY-1) return;
   queue[++rear] = val;
 }
 
@@ -371,35 +373,44 @@ function LinkedListViz({ code, setLabel, syncTrigger, commandText, commandId }: 
 
   return (
     <div className="flex flex-col items-center gap-6">
-      <div className="flex items-center gap-2 overflow-x-auto pb-4 scrollbar-hide">
+      <div className="flex items-center gap-1 overflow-x-auto pb-4 scrollbar-hide">
         <AnimatePresence mode="popLayout">
-          {nodes.map((node, i) => (
-            <motion.div
-              key={node.id}
-              layout
-              initial={{ opacity: 0, scale: 0.5, x: -20 }}
-              animate={{ opacity: 1, scale: 1, x: 0, boxShadow: highlight === i ? "0 0 20px hsl(var(--primary) / 0.6)" : "none" }}
-              exit={{ opacity: 0, scale: 0.5, x: 20 }}
-              transition={{ type: "spring", stiffness: 300, damping: 25 }}
-              className="flex items-center gap-2"
-            >
-              <div className={`w-16 h-16 rounded-xl glass-panel flex flex-col items-center justify-center border-2 transition-colors duration-300 ${highlight === i ? "border-primary" : "border-border/50"}`}>
-                <span className="text-lg font-mono font-bold text-foreground">{node.value}</span>
-                <span className="text-[10px] text-muted-foreground">node</span>
+          {nodes.length === 0 ? (
+            <div className="w-full flex items-center justify-center text-sm text-muted-foreground/50 italic min-h-[100px]">Linked List is empty</div>
+          ) : (
+            <>
+              {nodes.map((node, i) => (
+                <motion.div
+                  key={node.id}
+                  layout
+                  initial={{ opacity: 0, scale: 0.5, x: -20 }}
+                  animate={{ opacity: 1, scale: 1, x: 0, boxShadow: highlight === i ? "0 0 20px hsl(var(--primary) / 0.6)" : "none" }}
+                  exit={{ opacity: 0, scale: 0.5, x: 20 }}
+                  transition={{ type: "spring", stiffness: 300, damping: 25 }}
+                  className="flex items-center gap-1"
+                >
+                  <div className={`rounded-lg glass-panel border-2 transition-colors duration-300 ${highlight === i ? "border-primary neon-glow-blue" : "border-border/50"}`}>
+                    <div className="grid grid-cols-2 gap-0 divide-x divide-border/50">
+                      <div className="px-3 py-2 flex flex-col items-center justify-center border-b border-border/50">
+                        <span className="text-[9px] uppercase font-bold text-muted-foreground tracking-wider">Data</span>
+                        <span className="text-lg font-mono font-bold text-foreground">{node.value}</span>
+                      </div>
+                      <div className="px-3 py-2 flex flex-col items-center justify-center border-b border-border/50">
+                        <span className="text-[9px] uppercase font-bold text-muted-foreground tracking-wider">Next</span>
+                        <span className="text-[11px] font-mono text-primary">0x{(node.id + 1).toString(16).toUpperCase().padStart(4, "0")}</span>
+                      </div>
+                    </div>
+                  </div>
+                  {i < nodes.length - 1 && <span className="text-primary font-bold text-lg">→</span>}
+                </motion.div>
+              ))}
+              <div className="flex items-center gap-1">
+                <span className="text-primary font-bold text-lg">→</span>
+                <div className="rounded-lg glass-panel border-2 border-border/50 px-3 py-2">
+                  <span className="text-xs font-mono text-muted-foreground font-bold">null</span>
+                </div>
               </div>
-              {i < nodes.length - 1 && <span className="text-primary">→</span>}
-            </motion.div>
-          ))}
-          {nodes.length > 0 && (
-            <div className="flex items-center gap-2">
-              <span className="text-primary">→</span>
-              <div className="w-16 h-16 rounded-xl glass-panel flex items-center justify-center border-2 border-border/50">
-                <span className="text-sm font-mono text-muted-foreground">null</span>
-              </div>
-            </div>
-          )}
-          {nodes.length === 0 && (
-            <div className="w-full flex items-center justify-center text-sm text-muted-foreground">null</div>
+            </>
           )}
         </AnimatePresence>
       </div>
@@ -413,12 +424,19 @@ function LinkedListViz({ code, setLabel, syncTrigger, commandText, commandId }: 
 
 // Stack visualization
 function StackViz({ code, setLabel, syncTrigger, commandText, commandId }: { code: string; setLabel: (l: string) => void; syncTrigger: number; commandText: string; commandId: number }) {
+  const [maxCapacity, setMaxCapacity] = useState(10);
   const [stack, setStack] = useState<{ value: number; id: number }[]>([
     { value: 5, id: 0 }, { value: 12, id: 1 }, { value: 8, id: 2 }
   ]);
   const nextId = useRef(stack.length);
 
   useEffect(() => {
+    const capacityMatch = code.match(/MAX_CAPACITY\s*=\s*(\d+)/);
+    if (capacityMatch) {
+      const capacity = parseInt(capacityMatch[1]);
+      setMaxCapacity(capacity);
+      setLabel(`Stack capacity set to ${capacity}`);
+    }
     const dataMatch = code.match(/data\[\]\s*=\s*\{([^}]+)\}/);
     if (dataMatch) {
       const vals = dataMatch[1].split(",").map(v => parseInt(v.trim())).filter(v => !isNaN(v));
@@ -428,6 +446,10 @@ function StackViz({ code, setLabel, syncTrigger, commandText, commandId }: { cod
   }, [syncTrigger]);
 
   const push = () => {
+    if (stack.length >= maxCapacity) {
+      setLabel(`Stack Overflow! Maximum capacity (${maxCapacity}) reached`);
+      return;
+    }
     // Parse value from code marker
     const match = code.match(/push_val\s*=\s*(\d+)/);
     const val = match ? parseInt(match[1]) : 15;
@@ -438,7 +460,10 @@ function StackViz({ code, setLabel, syncTrigger, commandText, commandId }: { cod
   };
 
   const pop = () => {
-    if (stack.length === 0) return;
+    if (stack.length === 0) {
+      setLabel("Stack Underflow! Stack is empty");
+      return;
+    }
     const val = stack[stack.length - 1].value;
     setLabel(`Popping ${val}...`);
     setTimeout(() => {
@@ -453,6 +478,10 @@ function StackViz({ code, setLabel, syncTrigger, commandText, commandId }: { cod
     const pushMatch = command.match(/^push\s+(\d+)$/);
     if (pushMatch) {
       const val = Number(pushMatch[1]);
+      if (stack.length >= maxCapacity) {
+        setLabel(`Stack Overflow! Maximum capacity (${maxCapacity}) reached`);
+        return;
+      }
       setLabel(`Pushing ${val}...`);
       setStack(prev => [...prev, { value: val, id: nextId.current++ }]);
       setTimeout(() => setLabel(`Pushed ${val}`), 300);
@@ -465,25 +494,30 @@ function StackViz({ code, setLabel, syncTrigger, commandText, commandId }: { cod
 
   return (
     <div className="flex flex-col items-center gap-6">
-      <div className="flex flex-col-reverse items-center gap-1 min-h-[200px]">
+      <div className="flex flex-col-reverse items-center gap-1 min-h-[240px] p-4 glass-panel rounded-lg border border-border/30">
         <div className="w-32 h-2 bg-muted rounded-full" />
         <AnimatePresence mode="popLayout">
-          {stack.map((item, i) => (
-            <motion.div
-              key={item.id}
-              layout
-              initial={{ opacity: 0, scale: 0.5, y: -30 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.5, y: -30 }}
-              transition={{ type: "spring", stiffness: 300, damping: 25 }}
-              className={`w-32 h-12 rounded-lg glass-panel flex items-center justify-center font-mono font-bold text-foreground ${i === stack.length - 1 ? "border-primary neon-glow-blue" : ""}`}
-            >
-              {item.value}
-              {i === stack.length - 1 && <span className="ml-2 text-[10px] text-primary">← top</span>}
-            </motion.div>
-          ))}
+          {stack.length === 0 ? (
+            <div className="text-sm text-muted-foreground/50 italic font-mono py-12">Stack is empty</div>
+          ) : (
+            stack.map((item, i) => (
+              <motion.div
+                key={item.id}
+                layout
+                initial={{ opacity: 0, scale: 0.5, y: -30 }}
+                animate={{ opacity: 1, scale: 1, y: 0 }}
+                exit={{ opacity: 0, scale: 0.5, y: -30 }}
+                transition={{ type: "spring", stiffness: 300, damping: 25 }}
+                className={`w-32 h-12 rounded-lg glass-panel flex items-center justify-center font-mono font-bold text-foreground border-2 transition-colors ${i === stack.length - 1 ? "border-primary neon-glow-blue" : "border-border/50"}`}
+              >
+                {item.value}
+                {i === stack.length - 1 && <span className="ml-2 text-[10px] text-primary">← top</span>}
+              </motion.div>
+            ))
+          )}
         </AnimatePresence>
       </div>
+      <div className="text-xs text-muted-foreground text-center">Capacity: {stack.length}/{maxCapacity}</div>
       <div className="flex items-center gap-3">
         <button onClick={push} className="glass-panel px-4 py-2 text-sm text-primary hover:bg-primary/10 transition-colors font-semibold">Push</button>
         <button onClick={pop} className="glass-panel px-4 py-2 text-sm text-destructive hover:bg-destructive/10 transition-colors font-semibold">Pop</button>
@@ -494,10 +528,17 @@ function StackViz({ code, setLabel, syncTrigger, commandText, commandId }: { cod
 
 // Queue visualization
 function QueueViz({ code, onStep, onComplete, syncTrigger, commandText, commandId }: { code: string; onStep: (l: string) => void; onComplete: (l: string) => void; syncTrigger: number; commandText: string; commandId: number }) {
+  const [maxCapacity, setMaxCapacity] = useState(10);
   const [queue, setQueue] = useState<{ value: number; id: number }[]>([]);
   const nextId = useRef(0);
 
   useEffect(() => {
+    const capacityMatch = code.match(/MAX_CAPACITY\s*=\s*(\d+)/);
+    if (capacityMatch) {
+      const capacity = parseInt(capacityMatch[1]);
+      setMaxCapacity(capacity);
+      onComplete(`Queue capacity set to ${capacity}`);
+    }
     const dataMatch = code.match(/data\[\]\s*=\s*\{([^}]+)\}/);
     if (dataMatch) {
       const vals = dataMatch[1].split(",").map(v => parseInt(v.trim())).filter(v => !isNaN(v));
@@ -508,6 +549,10 @@ function QueueViz({ code, onStep, onComplete, syncTrigger, commandText, commandI
   }, [syncTrigger, code]);
 
   const enqueue = () => {
+    if (queue.length >= maxCapacity) {
+      onComplete(`Queue Overflow! Maximum capacity (${maxCapacity}) reached`);
+      return;
+    }
     const match = code.match(/enqueue_val\s*=\s*(\d+)/);
     const val = match ? parseInt(match[1]) : 40;
     onStep(`Enqueuing ${val}...`);
@@ -516,7 +561,10 @@ function QueueViz({ code, onStep, onComplete, syncTrigger, commandText, commandI
   };
 
   const dequeue = () => {
-    if (queue.length === 0) return;
+    if (queue.length === 0) {
+      onComplete("Queue Underflow! Queue is empty");
+      return;
+    }
     const val = queue[0].value;
     onStep(`Dequeuing ${val}...`);
     setTimeout(() => {
@@ -531,6 +579,10 @@ function QueueViz({ code, onStep, onComplete, syncTrigger, commandText, commandI
     const command = commandText.trim().toLowerCase();
     const enqueueMatch = command.match(/^enqueue\s+(\d+)$/);
     if (enqueueMatch) {
+      if (queue.length >= maxCapacity) {
+        onComplete(`Queue Overflow! Maximum capacity (${maxCapacity}) reached`);
+        return;
+      }
       const val = Number(enqueueMatch[1]);
       onStep(`Enqueuing ${val}...`);
       setQueue(prev => [...prev, { value: val, id: nextId.current++ }]);
@@ -544,26 +596,30 @@ function QueueViz({ code, onStep, onComplete, syncTrigger, commandText, commandI
 
   return (
     <div className="flex flex-col items-center gap-8">
-      <div className="flex items-center gap-1 min-h-[120px] p-4 glass-panel rounded-xl border-dashed border-2 border-primary/20 relative">
+      <div className="flex items-center gap-1 min-h-[140px] p-4 glass-panel rounded-xl border border-border/30 relative w-full">
         <div className="absolute -left-12 top-1/2 -translate-y-1/2 text-[10px] uppercase font-bold text-primary rotate-90">Front</div>
         <div className="absolute -right-12 top-1/2 -translate-y-1/2 text-[10px] uppercase font-bold text-destructive -rotate-90">Rear</div>
         <AnimatePresence mode="popLayout">
-          {queue.map((item, i) => (
-            <motion.div
-              key={item.id}
-              layout
-              initial={{ opacity: 0, scale: 0.5, x: 50 }}
-              animate={{ opacity: 1, scale: 1, x: 0 }}
-              exit={{ opacity: 0, scale: 0.5, x: -50 }}
-              transition={{ type: "spring", stiffness: 300, damping: 25 }}
-              className={`w-16 h-16 rounded-lg glass-panel flex items-center justify-center font-mono font-bold text-foreground relative ${i === 0 ? "border-primary neon-glow-blue" : i === queue.length - 1 ? "border-destructive" : "border-border/50"}`}
-            >
-              {item.value}
-            </motion.div>
-          ))}
+          {queue.length === 0 ? (
+            <div className="w-full flex items-center justify-center text-muted-foreground/50 font-mono text-sm italic">Queue is empty</div>
+          ) : (
+            queue.map((item, i) => (
+              <motion.div
+                key={item.id}
+                layout
+                initial={{ opacity: 0, scale: 0.5, x: 50 }}
+                animate={{ opacity: 1, scale: 1, x: 0 }}
+                exit={{ opacity: 0, scale: 0.5, x: -50 }}
+                transition={{ type: "spring", stiffness: 300, damping: 25 }}
+                className={`w-16 h-16 rounded-lg glass-panel flex items-center justify-center font-mono font-bold text-foreground border-2 transition-colors flex-shrink-0 ${i === 0 ? "border-primary neon-glow-blue" : i === queue.length - 1 ? "border-destructive neon-glow-red" : "border-border/50"}`}
+              >
+                {item.value}
+              </motion.div>
+            ))
+          )}
         </AnimatePresence>
-        {queue.length === 0 && <span className="text-muted-foreground/40 font-mono text-xs italic">Queue Empty</span>}
       </div>
+      <div className="text-xs text-muted-foreground text-center">Capacity: {queue.length}/{maxCapacity}</div>
       <div className="flex items-center gap-3">
         <button onClick={enqueue} className="glass-panel px-4 py-2 text-sm text-primary hover:bg-primary/10 transition-colors font-semibold">Enqueue</button>
         <button onClick={dequeue} className="glass-panel px-4 py-2 text-sm text-destructive hover:bg-destructive/10 transition-colors font-semibold">Dequeue</button>
